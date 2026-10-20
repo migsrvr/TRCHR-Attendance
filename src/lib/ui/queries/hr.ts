@@ -19,13 +19,21 @@ import {
   POLICY_LABEL,
 } from "@/lib/ui/fixtures/hr";
 import { ATTENDANCE_DAYS, ATTENDANCE_PERIOD_LABEL, canAskForCorrection, SESSION_EXTRAS } from "@/lib/ui/fixtures/attendance";
+import { DTR_NOTES, DTR_POLICY_LABEL } from "@/lib/ui/fixtures/dtr";
 import { REVIEW_COUNTS, REVIEW_DETAILS, REVIEW_ROWS } from "@/lib/ui/fixtures/reviews";
+import { hrReasonLabel } from "@/lib/ui/correction-form";
+import { datesBetween, defaultPeriod, dtrSearch, formatRange, isWeekend, parseDtrScope, workdaysBetween } from "@/lib/ui/dtr";
+import { hoursProgress } from "@/lib/ui/hours";
 import { ANA_HOURS, CORRECTIONS, OCTOBER_DAYS, SCHEDULE, SNAPSHOT_NOW, SNAPSHOT_TODAY } from "@/lib/ui/fixtures/intern";
 import { DEFAULT_REQUIRED_HOURS } from "@/lib/ui/intern-form";
 import type { StatusKind } from "@/lib/ui/status";
 import { clockToMinutes } from "@/lib/ui/timeline";
 import type {
   AttendanceRowVM,
+  DtrDayVM,
+  DtrDepartmentReportVM,
+  DtrInternReportVM,
+  DtrPageVM,
   AttendanceStatusFilter,
   AttendanceVM,
   HrOverviewVM,
@@ -321,3 +329,111 @@ export async function getAttendance(filters: {
     selected,
   };
 }
+
+/** An intern's DTR days in a range. Only Ana has daily records in the sample data. */
+function dtrDays(internId: string, from: string, to: string): DtrDayVM[] {
+  if (internId !== "ana-reyes") return [];
+  const notes = DTR_NOTES[internId] ?? {};
+  return datesBetween(from, to > SNAPSHOT_TODAY ? SNAPSHOT_TODAY : to).flatMap((dateIso): DtrDayVM[] => {
+    const day = OCTOBER_DAYS.find((candidate) => candidate.dateIso === dateIso);
+    if (!day) {
+      return isWeekend(dateIso) ? [] : [{ dateIso, sessions: [], state: "none", creditedMinutes: 0, rawMinutes: null }];
+    }
+    const closed = day.sessions.every((session) => session.end);
+    const rawMinutes = closed && day.sessions.length
+      ? day.sessions.reduce((sum, session) => sum + clockToMinutes(session.end!) - clockToMinutes(session.start), 0)
+      : null;
+    const correction = day.correction
+      ? {
+          status: hrCorrectionStatus(day.correction.id, day.correction.status),
+          href: `/hr/reviews/${day.correction.id}`,
+          label: day.correction.status === "APPROVED" ? "Approved correction" : "Correction open",
+        }
+      : undefined;
+    const state: DtrDayVM["state"] =
+      day.kind === "complete" ? "credited" : day.kind === "open" ? "open" : day.kind === "incomplete" ? "pending" : "none";
+    return [{ dateIso, sessions: day.sessions, state, creditedMinutes: state === "credited" ? day.creditedMinutes ?? 0 : 0, rawMinutes, note: notes[dateIso], correction }];
+  });
+}
+
+export async function getDtrReport(params: Record<string, string | undefined>): Promise<DtrPageVM> {
+  // TODO(module): src/modules/reports buildDtr (same calculation engine as the dashboard).
+  const parsed = parseDtrScope(params, { todayIso: SNAPSHOT_TODAY, defaultInternId: "ana-reyes" });
+  const reportable = INTERN_ROWS.filter((row) => row.tab !== "pending");
+  const subject = parsed.scope.subject;
+  const known =
+    subject.kind === "intern" ? reportable.some((row) => row.id === subject.id) : DEPARTMENTS.includes(subject.name);
+  const scope = known ? parsed.scope : { ...parsed.scope, subject: { kind: "intern" as const, id: "ana-reyes" } };
+  // A bad custom range keeps the form as typed but previews the default period.
+  const range = parsed.error ? defaultPeriod(SNAPSHOT_TODAY) : { from: scope.from, to: scope.to };
+  const workdays = workdaysBetween(range.from, range.to);
+  const subtitleTail = `${DTR_POLICY_LABEL} · Asia/Manila · preview generated today, ${SNAPSHOT_NOW}`;
+
+  let report: DtrInternReportVM | DtrDepartmentReportVM;
+  let title: string;
+  let subtitle: string;
+  if (scope.subject.kind === "intern") {
+    const internId = scope.subject.id;
+    const row = reportable.find((candidate) => candidate.id === internId)!;
+    const all = dtrDays(row.id, range.from, range.to);
+    const pendingDays = all.filter((day) => day.state === "pending");
+    report = {
+      kind: "intern",
+      intern: { id: row.id, name: row.name, department: row.department },
+      days: scope.includePending ? all : all.filter((day) => day.state === "credited" || day.state === "none"),
+      creditedMinutes: all.reduce((sum, day) => sum + day.creditedMinutes, 0),
+      daysCredited: all.filter((day) => day.state === "credited" && day.creditedMinutes > 0).length,
+      workdays,
+      pending: pendingDays.map((day) => {
+        const correction = CORRECTIONS.find((candidate) => candidate.dateIso === day.dateIso && candidate.status === "PENDING");
+        return {
+          dateIso: day.dateIso,
+          reason: correction ? hrReasonLabel(correction.reason).toLowerCase() : "held session",
+          href: day.correction?.href ?? `/hr/attendance?q=${encodeURIComponent(row.name)}`,
+        };
+      }),
+      remainingMinutes: hoursProgress(row).remainingMinutes,
+    };
+    title = `${row.name} · ${formatRange(range.from, range.to)}`;
+    subtitle = `${row.department} · ${subtitleTail}`;
+  } else {
+    const department = scope.subject.name;
+    const interns = reportable
+      .filter((row) => row.department === department)
+      .map((row) => {
+        const days = dtrDays(row.id, range.from, range.to);
+        return {
+          id: row.id,
+          name: row.name,
+          creditedMinutes: days.reduce((sum, day) => sum + day.creditedMinutes, 0),
+          daysCredited: days.filter((day) => day.state === "credited" && day.creditedMinutes > 0).length,
+          pendingCount: days.filter((day) => day.state === "pending").length,
+        };
+      });
+    report = {
+      kind: "department",
+      department,
+      interns,
+      creditedMinutes: interns.reduce((sum, intern) => sum + intern.creditedMinutes, 0),
+      workdays,
+      pendingCount: interns.reduce((sum, intern) => sum + intern.pendingCount, 0),
+    };
+    title = `${department} · ${formatRange(range.from, range.to)}`;
+    subtitle = `${plural(interns.length, "intern")} · ${subtitleTail}`;
+  }
+
+  return {
+    scope,
+    rangeError: parsed.error,
+    subjects: [
+      ...reportable.map((row) => ({ value: row.id, label: `${row.name} · ${row.department}` })),
+      ...DEPARTMENTS.map((name) => ({ value: `department:${name}`, label: `All interns in ${name}` })),
+    ],
+    title,
+    subtitle,
+    report,
+    exportHref: `/hr/reports/export?${dtrSearch(parsed.error ? { ...scope, ...range } : scope)}`,
+  };
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

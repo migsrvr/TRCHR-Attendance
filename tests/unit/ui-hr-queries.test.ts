@@ -6,6 +6,7 @@ import {
   getInternList,
   getInternProfile,
   getAttendance,
+  getDtrReport,
   getReviewDetail,
   getReviewQueue,
 } from "@/lib/ui/queries/hr";
@@ -176,5 +177,50 @@ describe("Attendance sample data", () => {
     expect(luis.scans[1]!.dateIso).toBe("2026-10-17");
     expect(luis.canAskForCorrection).toBe(true);
     expect(luis.elapsedMinutes).toBe(510);
+  });
+});
+
+describe("DTR sample data", () => {
+  it("matches the canvas for Ana, Oct 1–15", async () => {
+    const page = await getDtrReport({});
+    expect(page.title).toBe("Ana Reyes · Oct 1–15, 2026");
+    const report = page.report;
+    if (report.kind !== "intern") throw new Error("expected an intern report");
+    expect(report.creditedMinutes).toBe(4121);
+    expect(report.daysCredited).toBe(9);
+    expect(report.workdays).toBe(11);
+    expect(report.pending).toEqual([{ dateIso: "2026-10-15", reason: "missed clock-out", href: "/hr/reviews/corr-oct15" }]);
+    expect(report.remainingMinutes).toBe(10410);
+    expect(report.days).toHaveLength(11);
+  });
+
+  it("can leave pending days out of the preview without changing the total", async () => {
+    const page = await getDtrReport({ options: "1", each: "1" });
+    if (page.report.kind !== "intern") throw new Error("expected an intern report");
+    expect(page.report.days.map((day) => day.dateIso)).not.toContain("2026-10-15");
+    expect(page.report.creditedMinutes).toBe(4121);
+  });
+
+  it("stops at today and shows today's open session", async () => {
+    const page = await getDtrReport({ period: "second", from: "2026-10-01" });
+    if (page.report.kind !== "intern") throw new Error("expected an intern report");
+    expect(page.report.days.map((day) => [day.dateIso, day.state])).toEqual([
+      ["2026-10-16", "credited"],
+      ["2026-10-19", "open"],
+    ]);
+  });
+
+  it("totals a department from the same per-intern numbers", async () => {
+    const page = await getDtrReport({ subject: "department:Marketing" });
+    if (page.report.kind !== "department") throw new Error("expected a department report");
+    expect(page.report.interns.find((intern) => intern.id === "ana-reyes")?.creditedMinutes).toBe(4121);
+    expect(page.report.creditedMinutes).toBe(page.report.interns.reduce((sum, intern) => sum + intern.creditedMinutes, 0));
+  });
+
+  it("falls back to the default period when a custom range is invalid", async () => {
+    const page = await getDtrReport({ period: "custom", from: "2026-10-20", to: "2026-10-01" });
+    expect(page.rangeError).toMatch(/before the start/);
+    expect(page.title).toContain("Oct 1–15, 2026");
+    expect(page.exportHref).toContain("from=2026-10-01");
   });
 });

@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 import { cn } from "@/lib/utils";
 
 export interface KpiItem {
@@ -8,10 +10,13 @@ export interface KpiItem {
   attention?: boolean;
 }
 
-/** One card split into equal cells by 1px rules; wraps to fewer columns on narrow screens. */
+/** One card split into equal cells by 1px rules: two per row, all in one row from 1024px. */
 export function KpiStrip({ items }: { items: KpiItem[] }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-px overflow-hidden rounded-card border border-border bg-border shadow-card">
+    <div
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border bg-border shadow-card lg:grid-cols-[repeat(var(--kpi-count),minmax(0,1fr))]"
+      style={{ "--kpi-count": items.length } as CSSProperties}
+    >
       {items.map((item) => (
         <div key={item.label} className="bg-card p-4">
           <p className="text-xs font-medium leading-4 text-muted-foreground">{item.label}</p>

@@ -7,6 +7,7 @@
 import type { CorrectionRequestStatus, UserStatus } from "@prisma/client";
 
 import type { CorrectionProposal, CorrectionReason, RecordedDay } from "@/lib/ui/correction-form";
+import type { DtrScope } from "@/lib/ui/dtr";
 import type { StatusKind } from "@/lib/ui/status";
 
 export interface InternIdentityVM {
@@ -428,4 +429,47 @@ export interface AttendanceVM {
   departments: string[];
   days: AttendanceDayVM[];
   selected: SessionDetailVM | null;
+}
+
+export interface DtrDayVM {
+  dateIso: string;
+  sessions: DaySessionVM[];
+  /** credited: counts; none: no attendance; pending: waiting on a decision; open: still in progress. */
+  state: "credited" | "none" | "pending" | "open";
+  creditedMinutes: number;
+  /** Sum of session lengths before policy (only when every session closed). */
+  rawMinutes: number | null;
+  /** Policy explanation, e.g. "Capped at schedule". */
+  note?: string;
+  correction?: { status: StatusKind; href: string; label: string };
+}
+
+export interface DtrInternReportVM {
+  kind: "intern";
+  intern: { id: string; name: string; department: string };
+  days: DtrDayVM[];
+  creditedMinutes: number;
+  daysCredited: number;
+  workdays: number;
+  pending: { dateIso: string; reason: string; href: string }[];
+  remainingMinutes: number;
+}
+
+export interface DtrDepartmentReportVM {
+  kind: "department";
+  department: string;
+  interns: { id: string; name: string; creditedMinutes: number; daysCredited: number; pendingCount: number }[];
+  creditedMinutes: number;
+  workdays: number;
+  pendingCount: number;
+}
+
+export interface DtrPageVM {
+  scope: DtrScope;
+  rangeError: string | null;
+  subjects: { value: string; label: string }[];
+  title: string;
+  subtitle: string;
+  report: DtrInternReportVM | DtrDepartmentReportVM;
+  exportHref: string;
 }
