@@ -6,7 +6,11 @@ import {
   getInternList,
   getInternProfile,
   getAttendance,
+  getAuditLog,
+  getDepartments,
   getDtrReport,
+  getOfficeSetup,
+  getPolicies,
   getReviewDetail,
   getReviewQueue,
 } from "@/lib/ui/queries/hr";
@@ -222,5 +226,46 @@ describe("DTR sample data", () => {
     expect(page.rangeError).toMatch(/before the start/);
     expect(page.title).toContain("Oct 1–15, 2026");
     expect(page.exportHref).toContain("from=2026-10-01");
+  });
+});
+
+describe("Setup sample data", () => {
+  it("department counts add up to the Overview and directory", async () => {
+    const [rows, overview, list] = await Promise.all([getDepartments(), getHrOverview(), getInternList({})]);
+    expect(rows.reduce((sum, row) => sum + row.activeInterns, 0)).toBe(overview.kpis.activeInterns);
+    expect(rows.reduce((sum, row) => sum + row.finished, 0)).toBe(list.counts.finished);
+    expect(rows.filter((row) => row.status.type === "department" && row.status.value === "ACTIVE").map((row) => row.name).sort()).toEqual(
+      [...list.departments].sort(),
+    );
+  });
+
+  it("has one active policy and opens the draft by default", async () => {
+    const [office, policies] = await Promise.all([getOfficeSetup(), getPolicies()]);
+    expect(office.activePolicy.version).toBe(2);
+    expect(policies.selected).toMatchObject({ version: 3, state: "DRAFT", copiedFrom: 2 });
+    expect(policies.base?.version).toBe(2);
+    expect((await getPolicies(1)).selected.state).toBe("SUPERSEDED");
+    expect((await getPolicies(99)).selected.version).toBe(3);
+  });
+
+  it("lists the audit log newest first and filters it", async () => {
+    const log = await getAuditLog({});
+    const times = log.entries.map((entry) => entry.at);
+    expect(times).toEqual([...times].sort().reverse());
+    expect(log.total).toBe(186);
+    expect((await getAuditLog({ who: "system" })).entries.map((entry) => entry.action)).toEqual(["Held session for review"]);
+    expect((await getAuditLog({ category: "qr" })).entries).toHaveLength(1);
+    const ana = await getAuditLog({ query: "ana reyes" });
+    expect(ana.entries.every((entry) => entry.record.label.includes("Ana Reyes"))).toBe(true);
+    expect(ana.exportHref).toBe("/hr/audit/export?q=ana+reyes");
+  });
+
+  it("audit links point at records that exist", async () => {
+    const log = await getAuditLog({});
+    const luis = log.entries.find((entry) => entry.record.label.startsWith("Luis"))!;
+    expect((await getAttendance({ session: new URL(`http://x${luis.record.href}`).searchParams.get("session")! })).selected).not.toBeNull();
+    for (const entry of log.entries.filter((candidate) => candidate.record.href?.startsWith("/hr/reviews/"))) {
+      expect(await getReviewDetail(entry.record.href!.split("/").pop()!), entry.id).not.toBeNull();
+    }
   });
 });

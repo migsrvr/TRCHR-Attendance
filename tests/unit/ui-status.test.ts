@@ -69,3 +69,13 @@ describe("isOverdue", () => {
     expect(isOverdue({ type: "session", value: "REVIEW" })).toBe(false);
   });
 });
+
+describe("setup statuses", () => {
+  it("draws drafts as waiting, active as settled and retired items muted", () => {
+    expect(presentStatus({ type: "policy", value: "DRAFT" }, "hr")).toEqual({ shape: "ring", tone: "pend", label: "Draft" });
+    expect(presentStatus({ type: "policy", value: "ACTIVE" }, "hr")).toEqual({ shape: "dot", tone: "settled", label: "Active" });
+    expect(presentStatus({ type: "policy", value: "SUPERSEDED" }, "hr")).toMatchObject({ shape: "ring", muted: true });
+    expect(presentStatus({ type: "checkpoint", value: "REVOKED" }, "hr")).toMatchObject({ label: "Revoked", muted: true });
+    expect(presentStatus({ type: "department", value: "INACTIVE" }, "hr")).toMatchObject({ label: "Inactive", muted: true });
+  });
+});

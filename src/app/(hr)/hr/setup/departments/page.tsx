@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
 
 import { HrShell } from "@/components/shell/hr-shell";
-import { NotBuiltView } from "@/components/views/hr/not-built-view";
-import { getHrShell } from "@/lib/ui/queries/hr";
+import { DepartmentsView } from "@/components/views/hr/departments-view";
+import { getDepartments, getHrShell } from "@/lib/ui/queries/hr";
 
 export const metadata: Metadata = {
   title: "Departments · Top Realty HR",
 };
 
 export default async function HrDepartmentsPage() {
-  const shell = await getHrShell();
+  const [shell, rows] = await Promise.all([getHrShell(), getDepartments()]);
   return (
     <HrShell shell={shell} active="departments" title="Departments">
-      <NotBuiltView title="Departments" summary="Departments interns are assigned to." />
+      <DepartmentsView rows={rows} mock={process.env.NODE_ENV !== "production"} />
     </HrShell>
   );
 }

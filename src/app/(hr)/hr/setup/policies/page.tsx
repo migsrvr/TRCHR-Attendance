@@ -1,18 +1,21 @@
 import type { Metadata } from "next";
 
 import { HrShell } from "@/components/shell/hr-shell";
-import { NotBuiltView } from "@/components/views/hr/not-built-view";
-import { getHrShell } from "@/lib/ui/queries/hr";
+import { PoliciesView } from "@/components/views/hr/policies-view";
+import { getHrShell, getPolicies } from "@/lib/ui/queries/hr";
 
 export const metadata: Metadata = {
   title: "Policies · Top Realty HR",
 };
 
-export default async function HrPoliciesPage() {
-  const shell = await getHrShell();
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function HrPoliciesPage({ searchParams }: { searchParams: SearchParams }) {
+  const { version } = await searchParams;
+  const [shell, data] = await Promise.all([getHrShell(), getPolicies(typeof version === "string" ? Number(version) : undefined)]);
   return (
     <HrShell shell={shell} active="policies" title="Policies">
-      <NotBuiltView title="Policies" summary="Schedule, break, cap and rounding rules, by version." />
+      <PoliciesView data={data} mock={process.env.NODE_ENV !== "production"} />
     </HrShell>
   );
 }

@@ -20,6 +20,16 @@ import {
 } from "@/lib/ui/fixtures/hr";
 import { ATTENDANCE_DAYS, ATTENDANCE_PERIOD_LABEL, canAskForCorrection, SESSION_EXTRAS } from "@/lib/ui/fixtures/attendance";
 import { DTR_NOTES, DTR_POLICY_LABEL } from "@/lib/ui/fixtures/dtr";
+import {
+  AUDIT_ENTRIES,
+  AUDIT_TOTAL,
+  CHECKPOINTS,
+  DEPARTMENT_ROWS,
+  DEV_PRINT_TOKENS,
+  OFFICE,
+  POLICY_EXAMPLE,
+  POLICY_VERSIONS,
+} from "@/lib/ui/fixtures/setup";
 import { REVIEW_COUNTS, REVIEW_DETAILS, REVIEW_ROWS } from "@/lib/ui/fixtures/reviews";
 import { hrReasonLabel } from "@/lib/ui/correction-form";
 import { datesBetween, defaultPeriod, dtrSearch, formatRange, isWeekend, parseDtrScope, workdaysBetween } from "@/lib/ui/dtr";
@@ -29,7 +39,13 @@ import { DEFAULT_REQUIRED_HOURS } from "@/lib/ui/intern-form";
 import type { StatusKind } from "@/lib/ui/status";
 import { clockToMinutes } from "@/lib/ui/timeline";
 import type {
+  AuditCategory,
+  CheckpointVM,
+  AuditLogVM,
   AttendanceRowVM,
+  DepartmentRowVM,
+  OfficeSetupVM,
+  PoliciesVM,
   DtrDayVM,
   DtrDepartmentReportVM,
   DtrInternReportVM,
@@ -437,3 +453,67 @@ export async function getDtrReport(params: Record<string, string | undefined>): 
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+export async function getOfficeSetup(): Promise<OfficeSetupVM> {
+  // TODO(module): src/modules/offices getOfficeSettings, listCheckpoints; policies from src/modules/attendance.
+  return {
+    office: OFFICE,
+    activePolicy: POLICY_VERSIONS.find((version) => version.state === "ACTIVE")!,
+    policies: POLICY_VERSIONS.filter((version) => version.state !== "DRAFT"),
+    checkpoints: CHECKPOINTS,
+  };
+}
+
+export async function getPolicies(version?: number): Promise<PoliciesVM> {
+  // TODO(module): src/modules/attendance listPolicyVersions.
+  const fallback = POLICY_VERSIONS.find((candidate) => candidate.state === "DRAFT") ?? POLICY_VERSIONS[0]!;
+  const selected = POLICY_VERSIONS.find((candidate) => candidate.version === version) ?? fallback;
+  return {
+    versions: POLICY_VERSIONS,
+    selected,
+    base: selected.copiedFrom ? POLICY_VERSIONS.find((candidate) => candidate.version === selected.copiedFrom) ?? null : null,
+    example: POLICY_EXAMPLE,
+  };
+}
+
+export async function getDepartments(): Promise<DepartmentRowVM[]> {
+  // TODO(module): src/modules/accounts listDepartments with intern counts.
+  return DEPARTMENT_ROWS;
+}
+
+const AUDIT_CATEGORIES: AuditCategory[] = ["office", "qr", "policy", "accounts", "corrections", "attendance"];
+
+export async function getAuditLog(filters: { query?: string; who?: string; category?: string }): Promise<AuditLogVM> {
+  // TODO(module): src/modules/audit listEntries (append-only, newest first, paged).
+  const query = (filters.query ?? "").trim();
+  const who = filters.who === "hr" || filters.who === "system" ? filters.who : "anyone";
+  const category = AUDIT_CATEGORIES.includes(filters.category as AuditCategory) ? (filters.category as AuditCategory) : "all";
+  const needle = query.toLowerCase();
+  const entries = AUDIT_ENTRIES.filter(
+    (entry) =>
+      (who === "anyone" || entry.actor.kind === who) &&
+      (category === "all" || entry.category === category) &&
+      (!needle || `${entry.record.label} ${entry.action} ${entry.change}`.toLowerCase().includes(needle)),
+  );
+  const search = new URLSearchParams();
+  if (query) search.set("q", query);
+  if (who !== "anyone") search.set("who", who);
+  if (category !== "all") search.set("category", category);
+  const filtered = Boolean(query) || who !== "anyone" || category !== "all";
+  return {
+    query,
+    who,
+    category,
+    entries,
+    total: filtered ? entries.length : AUDIT_TOTAL,
+    exportHref: `/hr/audit/export${search.size ? `?${search}` : ""}`,
+  };
+}
+
+/** An active checkpoint and the value its printed code carries; null if missing or revoked. */
+export async function getCheckpointPrint(id: string): Promise<{ checkpoint: CheckpointVM; token: string; officeName: string } | null> {
+  // TODO(module): src/modules/offices issueCheckpointToken (signed with src/lib/qr/signer).
+  const checkpoint = CHECKPOINTS.find((candidate) => candidate.id === id);
+  if (!checkpoint || (checkpoint.status.type === "checkpoint" && checkpoint.status.value === "REVOKED")) return null;
+  return { checkpoint, token: DEV_PRINT_TOKENS[checkpoint.action], officeName: OFFICE.name };
+}

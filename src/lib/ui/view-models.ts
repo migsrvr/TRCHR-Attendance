@@ -8,6 +8,7 @@ import type { CorrectionRequestStatus, UserStatus } from "@prisma/client";
 
 import type { CorrectionProposal, CorrectionReason, RecordedDay } from "@/lib/ui/correction-form";
 import type { DtrScope } from "@/lib/ui/dtr";
+import type { PolicyRules } from "@/lib/ui/policy";
 import type { StatusKind } from "@/lib/ui/status";
 
 export interface InternIdentityVM {
@@ -471,5 +472,78 @@ export interface DtrPageVM {
   title: string;
   subtitle: string;
   report: DtrInternReportVM | DtrDepartmentReportVM;
+  exportHref: string;
+}
+
+export interface PolicyVersionVM {
+  version: number;
+  state: "DRAFT" | "ACTIVE" | "SUPERSEDED";
+  fromIso: string;
+  /** Last day it applies; null while open-ended. */
+  toIso: string | null;
+  /** Sessions calculated under it (locks it once above zero). */
+  sessionsUsing: number;
+  rules: PolicyRules;
+  /** Draft only: the version it was copied from. */
+  copiedFrom?: number;
+}
+
+export interface CheckpointVM {
+  id: string;
+  name: string;
+  action: "IN" | "OUT";
+  codeVersion: number;
+  expiresIso: string | null;
+  status: StatusKind;
+  revokedIso?: string;
+}
+
+export interface OfficeSetupVM {
+  office: { name: string; pinLabel: string; timeZone: string; radiusM: number; maxAccuracyM: number; settingsVersion: number };
+  activePolicy: PolicyVersionVM;
+  policies: PolicyVersionVM[];
+  checkpoints: CheckpointVM[];
+}
+
+export interface PoliciesVM {
+  versions: PolicyVersionVM[];
+  selected: PolicyVersionVM;
+  /** What the selected draft was copied from, to mark changed fields. */
+  base: PolicyVersionVM | null;
+  example: { start: string; end: string }[];
+}
+
+export interface DepartmentRowVM {
+  id: string;
+  name: string;
+  activeInterns: number;
+  settingUp: number;
+  finished: number;
+  status: StatusKind;
+  inactiveSinceIso?: string;
+}
+
+export type AuditCategory = "office" | "qr" | "policy" | "accounts" | "corrections" | "attendance";
+
+export interface AuditEntryVM {
+  id: string;
+  /** Office-local "YYYY-MM-DD HH:MM". */
+  at: string;
+  actor: { kind: "hr" | "system"; name: string };
+  action: string;
+  category: AuditCategory;
+  record: { label: string; href?: string };
+  change: string;
+  /** Expandable before/after for revisions. */
+  detail?: { rows: { label: string; before: string; after: string }[]; facts: { label: string; value: string }[] };
+}
+
+export interface AuditLogVM {
+  query: string;
+  who: "anyone" | "hr" | "system";
+  category: AuditCategory | "all";
+  entries: AuditEntryVM[];
+  /** All entries in the period (the sample shows the latest page). */
+  total: number;
   exportHref: string;
 }

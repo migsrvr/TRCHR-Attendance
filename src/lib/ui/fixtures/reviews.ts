@@ -169,7 +169,7 @@ export const REVIEW_DETAILS: Record<string, ReviewDetailVM> = {
     proposed: { timeIn: "09:00", timeOut: "18:00", creditedMinutes: 480 },
     jev: { status: "read", category: "Technical issue", categoryScore: 0.71, detailsScore: 0.4, version: 1, model: "jev-1.12.2", atLabel: "Sep 22, 7:13 PM" },
     evidence: [{ action: "Time in", time: "09:03:40", qrLabel: ENTRANCE_IN, distanceM: 41, radiusM: 60, accuracyM: 95, accepted: false }],
-    evidenceNote: "The 09:03 scan was rejected: location accuracy ±95 m, needed ±50 m or better.",
+    evidenceNote: "The 09:03 scan was rejected: location accuracy ±95 m, needed ±25 m or better.",
     history: [
       { label: "HR rejected · version 2", atLabel: "Sep 23 · 09:48" },
       { label: "Jev read version 1", atLabel: "Sep 22 · 19:13" },

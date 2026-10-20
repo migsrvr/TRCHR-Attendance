@@ -1,18 +1,25 @@
 import type { Metadata } from "next";
 
 import { HrShell } from "@/components/shell/hr-shell";
-import { NotBuiltView } from "@/components/views/hr/not-built-view";
-import { getHrShell } from "@/lib/ui/queries/hr";
+import { AuditLogView } from "@/components/views/hr/audit-log-view";
+import { getAuditLog, getHrShell } from "@/lib/ui/queries/hr";
 
 export const metadata: Metadata = {
   title: "Audit log · Top Realty HR",
 };
 
-export default async function HrAuditLogPage() {
-  const shell = await getHrShell();
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function HrAuditLogPage({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const single = (key: string) => (typeof params[key] === "string" ? (params[key] as string) : undefined);
+  const [shell, data] = await Promise.all([
+    getHrShell(),
+    getAuditLog({ query: single("q"), who: single("who"), category: single("category") }),
+  ]);
   return (
     <HrShell shell={shell} active="audit" title="Audit log">
-      <NotBuiltView title="Audit log" summary="Every change HR and the system made, read-only." />
+      <AuditLogView data={data} />
     </HrShell>
   );
 }

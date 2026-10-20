@@ -25,7 +25,10 @@ export type StatusKind =
   | { type: "scan"; value: ScanValidationStatus }
   | { type: "account"; value: UserStatus }
   | { type: "internship"; value: InternshipStatus }
-  | { type: "today"; value: "NOT_STARTED" };
+  | { type: "today"; value: "NOT_STARTED" }
+  | { type: "policy"; value: "DRAFT" | "ACTIVE" | "SUPERSEDED" }
+  | { type: "checkpoint"; value: "ACTIVE" | "REVOKED" }
+  | { type: "department"; value: "ACTIVE" | "INACTIVE" };
 
 export type StatusShape = "chip" | "ring" | "dot" | "live";
 export type StatusTone = "attn" | "pend" | "settled" | "negative" | "inactive";
@@ -136,6 +139,12 @@ export function presentStatus(kind: StatusKind, audience: Audience): StatusPrese
       return internshipStatus(kind.value);
     case "today":
       return ring("inactive", "No Time in yet");
+    case "policy":
+      return kind.value === "DRAFT" ? ring("pend", "Draft") : kind.value === "ACTIVE" ? dot("settled", "Active") : ring("inactive", "Superseded");
+    case "checkpoint":
+      return kind.value === "ACTIVE" ? dot("settled", "Active") : ring("inactive", "Revoked");
+    case "department":
+      return kind.value === "ACTIVE" ? dot("settled", "Active") : ring("inactive", "Inactive");
     default:
       return unreachable(kind);
   }
