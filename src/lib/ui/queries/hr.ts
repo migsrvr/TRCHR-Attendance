@@ -18,10 +18,20 @@ import {
   OVERVIEW_COUNTS,
   POLICY_LABEL,
 } from "@/lib/ui/fixtures/hr";
+import { REVIEW_COUNTS, REVIEW_DETAILS, REVIEW_ROWS } from "@/lib/ui/fixtures/reviews";
 import { ANA_HOURS, CORRECTIONS, OCTOBER_DAYS, SCHEDULE, SNAPSHOT_NOW, SNAPSHOT_TODAY } from "@/lib/ui/fixtures/intern";
 import { DEFAULT_REQUIRED_HOURS } from "@/lib/ui/intern-form";
 import type { StatusKind } from "@/lib/ui/status";
-import type { HrOverviewVM, HrShellVM, InternAccountTab, InternListVM, InternProfileVM } from "@/lib/ui/view-models";
+import type {
+  HrOverviewVM,
+  HrShellVM,
+  InternAccountTab,
+  InternListVM,
+  InternProfileVM,
+  ReviewDetailVM,
+  ReviewQueueVM,
+  ReviewTab,
+} from "@/lib/ui/view-models";
 
 const HOURS_ROWS_SHOWN = 4;
 
@@ -181,4 +191,41 @@ export async function getInternProfile(id: string): Promise<InternProfileVM | nu
       status: hrCorrectionStatus(correction.id, correction.status),
     })),
   };
+}
+
+const REVIEW_TABS: ReviewTab[] = ["you", "intern", "decided", "all"];
+
+export async function getReviewQueue(filters: {
+  tab?: ReviewTab;
+  query?: string;
+  department?: string | null;
+  jev?: ReviewQueueVM["jev"];
+}): Promise<ReviewQueueVM> {
+  // TODO(module): src/modules/corrections listForReview (plus held sessions from attendance), oldest first.
+  const tab = filters.tab && REVIEW_TABS.includes(filters.tab) ? filters.tab : "you";
+  const query = (filters.query ?? "").trim();
+  const department = filters.department && DEPARTMENTS.includes(filters.department) ? filters.department : null;
+  const jev = filters.jev === "read" || filters.jev === "manual" ? filters.jev : "all";
+  const needle = query.toLowerCase();
+  return {
+    tab,
+    query,
+    department,
+    jev,
+    counts: REVIEW_COUNTS,
+    rows: REVIEW_ROWS.filter(
+      (row) =>
+        (tab === "all" || row.tab === tab) &&
+        (!department || row.department === department) &&
+        (jev === "all" || (jev === "read") === (row.jevCategory !== null)) &&
+        (!needle || row.internName.toLowerCase().includes(needle)),
+    ),
+    departments: DEPARTMENTS,
+  };
+}
+
+export async function getReviewDetail(id: string): Promise<ReviewDetailVM | null> {
+  // TODO(module): src/modules/corrections getCorrectionForReview (with version,
+  // revisions, Jev run and the day's scan evidence).
+  return REVIEW_DETAILS[id] ?? null;
 }

@@ -111,22 +111,3 @@ export function RowActions({ name, links }: { name: string; links: { href: strin
   );
 }
 
-/** Department filter that applies as soon as it changes; the search box submits on Enter. */
-export function DepartmentSelect({ departments, value }: { departments: string[]; value: string | null }) {
-  return (
-    <select
-      id="intern-filter-department"
-      name="department"
-      defaultValue={value ?? ""}
-      onChange={(event) => event.currentTarget.form?.requestSubmit()}
-      className="h-9 rounded-btn border border-border bg-card px-3 text-[13px] text-foreground"
-    >
-      <option value="">All departments</option>
-      {departments.map((department) => (
-        <option key={department} value={department}>
-          {department}
-        </option>
-      ))}
-    </select>
-  );
-}

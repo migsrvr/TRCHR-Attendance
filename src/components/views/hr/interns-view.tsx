@@ -1,12 +1,13 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
 
+import { AutoSubmitSelect } from "@/components/ui/auto-submit-select";
 import { ButtonLink, buttonClasses } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusMark } from "@/components/ui/status-mark";
 import { AddInternDialog } from "@/components/views/hr/add-intern-dialog";
-import { DepartmentSelect, ResendLinkButton, RowActions } from "@/components/views/hr/intern-row-controls";
+import { ResendLinkButton, RowActions } from "@/components/views/hr/intern-row-controls";
 import { formatDuration, formatHours, formatShortDate } from "@/lib/ui/format";
 import { hoursProgress } from "@/lib/ui/hours";
 import type { InternAccountTab, InternListRowVM, InternListVM } from "@/lib/ui/view-models";
@@ -172,7 +173,12 @@ export function InternsView({ data, mock, openAdd = false }: { data: InternListV
           <label htmlFor="intern-filter-department" className="sr-only">
             Department
           </label>
-          <DepartmentSelect departments={data.departments} value={data.department} />
+          <AutoSubmitSelect
+            id="intern-filter-department"
+            name="department"
+            value={data.department ?? ""}
+            options={[{ value: "", label: "All departments" }, ...data.departments.map((d) => ({ value: d, label: d }))]}
+          />
         </form>
       </div>
 

@@ -269,3 +269,88 @@ export interface InternProfileVM {
   corrections: { id: string; dateIso: string; reason: CorrectionReason; status: StatusKind }[];
   assignments: { department: string; fromIso: string; toIso: string | null }[];
 }
+
+export type ReviewTab = "you" | "intern" | "decided" | "all";
+
+/** Jev's advisory reading of a request (it never decides). */
+export type JevReadingVM =
+  | {
+      status: "read";
+      category: string;
+      categoryScore: number;
+      detailsScore: number;
+      /** Request version the reading covers. */
+      version: number;
+      model: string;
+      atLabel: string;
+    }
+  | { status: "unavailable" };
+
+export interface ReviewRowVM {
+  id: string;
+  href: string;
+  internName: string;
+  department: string;
+  dateIso: string;
+  /** e.g. "Add Time out" + "18:05". */
+  request: { label: string; value?: string };
+  /** Category when Jev read it; null = manual review. */
+  jevCategory: string | null;
+  status: StatusKind;
+  ageDays: number;
+  tab: Exclude<ReviewTab, "all">;
+}
+
+export interface ReviewQueueVM {
+  tab: ReviewTab;
+  query: string;
+  department: string | null;
+  jev: "all" | "read" | "manual";
+  counts: Record<ReviewTab, number>;
+  rows: ReviewRowVM[];
+  departments: string[];
+}
+
+export interface ReviewTimesVM {
+  timeIn: string | null;
+  timeOut: string | null;
+  creditedMinutes: number;
+}
+
+export interface ReviewEvidenceVM {
+  action: "Time in" | "Time out";
+  /** Office-local, with seconds. */
+  time: string;
+  qrLabel: string;
+  distanceM: number;
+  radiusM: number;
+  accuracyM: number;
+  accepted: boolean;
+}
+
+export interface ReviewDetailVM {
+  id: string;
+  version: number;
+  internId: string;
+  internName: string;
+  department: string;
+  dateIso: string;
+  reason: CorrectionReason;
+  /** Raw status: drives what HR can do. */
+  state: CorrectionRequestStatus;
+  status: StatusKind;
+  submittedLabel: string;
+  recorded: ReviewTimesVM;
+  proposed: ReviewTimesVM;
+  policyNote: string;
+  schedule: { start: string; end: string };
+  hours: { creditedMinutes: number; requiredMinutes: number };
+  comments: { id: string; author: "intern" | "hr"; name: string; label?: string; atLabel: string; body: string }[];
+  jev: JevReadingVM;
+  evidence: ReviewEvidenceVM[];
+  /** e.g. "No Time out scan on Oct 15, accepted or rejected." */
+  evidenceNote?: string;
+  /** Newest first. */
+  history: { label: string; atLabel: string }[];
+  decisionNote?: string;
+}

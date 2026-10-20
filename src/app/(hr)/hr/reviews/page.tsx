@@ -1,18 +1,32 @@
 import type { Metadata } from "next";
 
 import { HrShell } from "@/components/shell/hr-shell";
-import { NotBuiltView } from "@/components/views/hr/not-built-view";
-import { getHrShell } from "@/lib/ui/queries/hr";
+import { ReviewsView } from "@/components/views/hr/reviews-view";
+import { getHrShell, getReviewQueue } from "@/lib/ui/queries/hr";
+import type { ReviewQueueVM, ReviewTab } from "@/lib/ui/view-models";
 
 export const metadata: Metadata = {
   title: "Reviews · Top Realty HR",
 };
 
-export default async function HrReviewsPage() {
-  const shell = await getHrShell();
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function HrReviewsPage({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const single = (key: string) => (typeof params[key] === "string" ? (params[key] as string) : undefined);
+  const [shell, data] = await Promise.all([
+    getHrShell(),
+    getReviewQueue({
+      tab: single("tab") as ReviewTab | undefined,
+      query: single("q"),
+      department: single("department"),
+      jev: single("jev") as ReviewQueueVM["jev"] | undefined,
+    }),
+  ]);
+
   return (
     <HrShell shell={shell} active="reviews" title="Reviews">
-      <NotBuiltView title="Reviews" summary="Corrections and held sessions waiting on a decision." />
+      <ReviewsView data={data} />
     </HrShell>
   );
 }

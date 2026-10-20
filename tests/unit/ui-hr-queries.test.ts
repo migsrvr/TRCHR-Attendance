@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { getHrOverview, getHrShell, getInternList, getInternProfile } from "@/lib/ui/queries/hr";
+import {
+  getHrOverview,
+  getHrShell,
+  getInternList,
+  getInternProfile,
+  getReviewDetail,
+  getReviewQueue,
+} from "@/lib/ui/queries/hr";
 import { getInternHome } from "@/lib/ui/queries/intern";
 
 describe("HR sample data", () => {
@@ -78,5 +85,43 @@ describe("Interns sample data", () => {
       "2026-10-14",
       "2026-10-13",
     ]);
+  });
+});
+
+describe("Reviews sample data", () => {
+  it("waiting on you is the Overview's Needs you list", async () => {
+    const [queue, overview] = await Promise.all([getReviewQueue({ tab: "you" }), getHrOverview()]);
+    expect(queue.counts.you).toBe(overview.kpis.waitingOnHr);
+    expect(queue.rows.map((row) => row.id)).toEqual(overview.needsYou.map((item) => item.id));
+    const { you, intern, decided, all } = queue.counts;
+    expect(all).toBe(you + intern + decided);
+  });
+
+  it("filters by tab, intern search, department and Jev reading", async () => {
+    expect((await getReviewQueue({ tab: "intern" })).rows.every((row) => row.tab === "intern")).toBe(true);
+    expect((await getReviewQueue({ query: "paolo" })).rows.map((row) => row.internName)).toEqual(["Paolo Cruz"]);
+    expect((await getReviewQueue({ department: "Finance" })).rows.every((row) => row.department === "Finance")).toBe(true);
+    const manual = await getReviewQueue({ jev: "manual" });
+    expect(manual.rows.map((row) => row.internName)).toContain("Bea Santos");
+    expect(manual.rows.every((row) => row.jevCategory === null)).toBe(true);
+  });
+
+  it("has a detail page for every correction anyone links to", async () => {
+    const [queue, ana] = await Promise.all([getReviewQueue({ tab: "all" }), getInternProfile("ana-reyes")]);
+    const ids = new Set([
+      ...queue.rows.filter((row) => row.href.startsWith("/hr/reviews/")).map((row) => row.id),
+      ...ana!.corrections.map((correction) => correction.id),
+    ]);
+    for (const id of ids) expect(await getReviewDetail(id), id).not.toBeNull();
+    expect(await getReviewDetail("nope")).toBeNull();
+  });
+
+  it("matches Ana's own view of her Oct 15 request", async () => {
+    const detail = (await getReviewDetail("corr-oct15"))!;
+    expect(detail.version).toBe(3);
+    expect(detail.proposed.creditedMinutes - detail.recorded.creditedMinutes).toBe(481);
+    expect(detail.comments.map((comment) => comment.author)).toEqual(["intern", "hr", "intern"]);
+    expect(detail.jev).toMatchObject({ status: "read", version: 3 });
+    expect(detail.hours.creditedMinutes).toBe(18750);
   });
 });

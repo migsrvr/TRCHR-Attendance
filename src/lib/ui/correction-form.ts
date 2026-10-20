@@ -21,6 +21,19 @@ export function reasonLabel(reason: CorrectionReason): string {
   return CORRECTION_REASONS.find((item) => item.value === reason)?.label ?? "Something else";
 }
 
+const HR_REASON_LABELS: Record<CorrectionReason, string> = {
+  missed_clock_out: "Missed clock-out",
+  missed_clock_in: "Missed clock-in",
+  technical_issue: "Technical issue",
+  wrong_action: "Wrong action",
+  other: "Other reason",
+};
+
+/** HR's shorter wording for the same reasons (matches Jev's categories on HR screens). */
+export function hrReasonLabel(reason: CorrectionReason): string {
+  return HR_REASON_LABELS[reason];
+}
+
 /** "You proposed Time out 18:05", or "Time in set to 09:10" once approved. */
 export function describeProposal(proposal: { timeIn?: string; timeOut?: string }, approved = false): string {
   if (proposal.timeIn && proposal.timeOut) {
