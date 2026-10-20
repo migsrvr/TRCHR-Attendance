@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { presentStatus, type Audience, type StatusKind, type StatusPresentation } from "@/lib/ui/status";
+import { isOverdue, presentStatus, type Audience, type StatusKind, type StatusPresentation } from "@/lib/ui/status";
 
 type Row = [StatusKind, Audience, Pick<StatusPresentation, "shape" | "tone" | "label">];
 
@@ -58,5 +58,14 @@ describe("presentStatus", () => {
   it("mutes inactive states", () => {
     expect(presentStatus({ type: "correction", value: "SUPERSEDED" }, "hr").muted).toBe(true);
     expect(presentStatus({ type: "session", value: "COMPLETE" }, "hr").muted).toBeFalsy();
+  });
+});
+
+describe("isOverdue", () => {
+  it("is true only for pending corrections past the review threshold", () => {
+    expect(isOverdue({ type: "correction", value: "PENDING", ageWorkdays: 3 })).toBe(true);
+    expect(isOverdue({ type: "correction", value: "PENDING", ageWorkdays: 2 })).toBe(false);
+    expect(isOverdue({ type: "correction", value: "NEEDS_INFO", ageWorkdays: 9 })).toBe(false);
+    expect(isOverdue({ type: "session", value: "REVIEW" })).toBe(false);
   });
 });

@@ -1,8 +1,18 @@
-export default function HrOverviewPage() {
+import type { Metadata } from "next";
+
+import { HrShell } from "@/components/shell/hr-shell";
+import { OverviewView } from "@/components/views/hr/overview-view";
+import { getHrOverview, getHrShell } from "@/lib/ui/queries/hr";
+
+export const metadata: Metadata = {
+  title: "Overview · Top Realty HR",
+};
+
+export default async function HrOverviewPage() {
+  const [shell, data] = await Promise.all([getHrShell(), getHrOverview()]);
   return (
-    <main className="p-6">
-      <h1 className="text-2xl font-semibold">HR Overview</h1>
-      <p className="text-slate-600">HR dashboard (placeholder).</p>
-    </main>
+    <HrShell shell={shell} active="overview" title="Overview">
+      <OverviewView data={data} />
+    </HrShell>
   );
 }

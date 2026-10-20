@@ -7,6 +7,7 @@
 import type { CorrectionRequestStatus } from "@prisma/client";
 
 import type { CorrectionProposal, CorrectionReason, RecordedDay } from "@/lib/ui/correction-form";
+import type { StatusKind } from "@/lib/ui/status";
 
 export interface InternIdentityVM {
   name: string;
@@ -117,4 +118,83 @@ export interface CorrectionDetailVM {
   decisionNote?: string;
   messages: CorrectionMessageVM[];
   canReply: boolean;
+}
+
+// HR panel
+
+export interface HrIdentityVM {
+  /** Bracketed placeholder until real HR accounts exist (spec section 3). */
+  name: string;
+  roleLabel: string;
+  initials: string;
+}
+
+/** What every HR page's frame shows. */
+export interface HrShellVM {
+  identity: HrIdentityVM;
+  /** Corrections and held sessions waiting on an HR decision: the sidebar Reviews count. */
+  reviewCount: number;
+  /** e.g. "Top Realty office · Asia/Manila". */
+  officeLabel: string;
+}
+
+export interface NeedsYouItemVM {
+  id: string;
+  href: string;
+  internName: string;
+  subject: "correction" | "missing-day" | "session";
+  /** The office day the item is about. */
+  dateIso: string;
+  /** Reason and proposal, e.g. "Missed clock-out · proposes Time out 18:05". */
+  detail: string;
+  /** Jev has an advisory reading; shows the JEV tag. */
+  jevRead: boolean;
+  status: StatusKind;
+  /** Calendar days it has been waiting. */
+  ageDays: number;
+}
+
+export interface OfficeTodayItemVM {
+  internId: string;
+  name: string;
+  department: string;
+  /** An open or complete session, or a rejected scan. */
+  status: StatusKind;
+  /** Latest scan; for an open session, its Time in. */
+  time: string;
+}
+
+export interface HoursRowVM {
+  internId: string;
+  name: string;
+  department: string;
+  creditedMinutes: number;
+  requiredMinutes: number;
+  endDateIso: string;
+  /** Credited minus expected by today (calculation engine). Negative = behind. */
+  paceDeltaMinutes: number;
+}
+
+export interface HrOverviewVM {
+  todayIso: string;
+  /** "HH:MM" the numbers were read. */
+  updatedAt: string;
+  kpis: {
+    inOffice: number;
+    activeInterns: number;
+    completedToday: number;
+    /** Open sessions from earlier days. */
+    missingClockOut: number;
+    waitingOnHr: number;
+    oldestWaitingDays: number | null;
+  };
+  /** Oldest first. */
+  needsYou: NeedsYouItemVM[];
+  /** Latest scans first; a short list. */
+  officeToday: OfficeTodayItemVM[];
+  scansToday: number;
+  /** Furthest behind first. */
+  behindPace: HoursRowVM[];
+  /** Nearest end date first. */
+  finishingSoon: HoursRowVM[];
 }

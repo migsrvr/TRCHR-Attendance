@@ -4,6 +4,7 @@ import {
   formatClock,
   formatDelta,
   formatDuration,
+  formatHours,
   formatLongDate,
   formatMonthLabel,
   formatReceiptId,
@@ -66,5 +67,12 @@ describe("formatMonthLabel / shiftMonth", () => {
 describe("formatReceiptId", () => {
   it("shows the first eight characters in two groups", () => {
     expect(formatReceiptId("4f2a91c0-7d1e-4b8a-9c2f-000000000000")).toBe("4F2A-91C0");
+  });
+});
+
+describe("formatHours", () => {
+  it("shows a requirement in whole hours", () => {
+    expect(formatHours(29160)).toBe("486h");
+    expect(formatHours(36000)).toBe("600h");
   });
 });

@@ -97,3 +97,24 @@ describe("first-run screens", () => {
     expect(html).toContain('href="/dashboard"');
   });
 });
+
+describe("AuthFrame brand (desktop)", () => {
+  it("adds the navy brand panel for wide screens", () => {
+    const html = renderToStaticMarkup(
+      <AuthFrame variant="brand">
+        <p>x</p>
+      </AuthFrame>,
+    );
+    expect(html).toContain("Scans, hours and corrections in one place");
+    expect(html).toContain("Top Realty office · Asia/Manila");
+  });
+
+  it("takes page-specific panel copy", () => {
+    const html = renderToStaticMarkup(
+      <AuthFrame variant="brand" panel={{ title: "One step to finish your account", body: "Choose a password." }}>
+        <p>x</p>
+      </AuthFrame>,
+    );
+    expect(html).toContain("One step to finish your account");
+  });
+});

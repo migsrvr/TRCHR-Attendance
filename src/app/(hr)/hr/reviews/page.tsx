@@ -1,8 +1,18 @@
-export default function HrReviewsPage() {
+import type { Metadata } from "next";
+
+import { HrShell } from "@/components/shell/hr-shell";
+import { NotBuiltView } from "@/components/views/hr/not-built-view";
+import { getHrShell } from "@/lib/ui/queries/hr";
+
+export const metadata: Metadata = {
+  title: "Reviews · Top Realty HR",
+};
+
+export default async function HrReviewsPage() {
+  const shell = await getHrShell();
   return (
-    <main className="p-6">
-      <h1 className="text-2xl font-semibold">Reviews</h1>
-      <p className="text-slate-600">Correction review queue (placeholder).</p>
-    </main>
+    <HrShell shell={shell} active="reviews" title="Reviews">
+      <NotBuiltView title="Reviews" summary="Corrections and held sessions waiting on a decision." />
+    </HrShell>
   );
 }

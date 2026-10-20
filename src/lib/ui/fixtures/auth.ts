@@ -15,8 +15,8 @@ export const SETUP_LINKS: Record<string, SetupLinkVM> = {
     expiresLabel: "Oct 25 at 6:00 PM",
   },
   "demo-hr": {
-    email: "hr.demo@toprealty.com.ph",
-    firstName: "Dana",
+    email: "[company email]",
+    firstName: "[HR NAME]",
     role: "HR",
     expiresLabel: "Oct 25 at 6:00 PM",
   },

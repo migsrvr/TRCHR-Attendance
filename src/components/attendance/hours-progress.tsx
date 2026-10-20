@@ -1,4 +1,4 @@
-import { formatDuration, formatShortDate } from "@/lib/ui/format";
+import { formatDuration, formatHours, formatShortDate } from "@/lib/ui/format";
 import { hoursProgress } from "@/lib/ui/hours";
 
 /** Credited internship hours against the requirement, with what's left and the pace needed. */
@@ -19,7 +19,7 @@ export function HoursProgress({
     <div>
       <p className="flex items-baseline gap-1.5">
         <span className="font-heading text-[32px] font-bold leading-9 tabular-nums">{formatDuration(creditedMinutes)}</span>
-        <span className="text-[13px] text-muted-foreground">of {Math.round(requiredMinutes / 60)}h</span>
+        <span className="text-[13px] text-muted-foreground">of {formatHours(requiredMinutes)}</span>
       </p>
       <div
         role="progressbar"

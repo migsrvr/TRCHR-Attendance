@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { officeDateIso } from "@/lib/ui/format";
-import { hoursProgress } from "@/lib/ui/hours";
+import { hoursProgress, PACE_ALERT_MINUTES, paceStatus } from "@/lib/ui/hours";
 
 describe("hoursProgress", () => {
   it("matches Ana's numbers on the canvas", () => {
@@ -29,5 +29,23 @@ describe("officeDateIso", () => {
     // 23:30 UTC on Oct 18 is already Oct 19 in Manila (UTC+8).
     expect(officeDateIso(new Date("2026-10-18T23:30:00Z"), "Asia/Manila")).toBe("2026-10-19");
     expect(officeDateIso(new Date("2026-10-18T10:00:00Z"), "Asia/Manila")).toBe("2026-10-18");
+  });
+});
+
+describe("paceStatus", () => {
+  it("rounds to whole hours behind with a true minus sign", () => {
+    expect(paceStatus(-2460)).toEqual({ label: "−41h", alert: true });
+    expect(paceStatus(-1080)).toEqual({ label: "−18h", alert: true });
+  });
+
+  it("only alerts once an intern is a full workday behind", () => {
+    expect(paceStatus(-360)).toEqual({ label: "−6h", alert: false });
+    expect(paceStatus(-PACE_ALERT_MINUTES)).toMatchObject({ alert: true });
+  });
+
+  it("calls ahead, level and under half an hour behind on track", () => {
+    expect(paceStatus(30)).toEqual({ label: "On track", alert: false });
+    expect(paceStatus(0)).toEqual({ label: "On track", alert: false });
+    expect(paceStatus(-25)).toEqual({ label: "On track", alert: false });
   });
 });

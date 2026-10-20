@@ -9,6 +9,11 @@ export function formatDuration(minutes: number): string {
   return `${Math.floor(safe / 60)}h ${String(safe % 60).padStart(2, "0")}m`;
 }
 
+/** A requirement in whole hours, e.g. "486h". */
+export function formatHours(minutes: number): string {
+  return `${Math.round(Math.max(0, minutes) / 60)}h`;
+}
+
 /** Signed duration, e.g. "+8h 01m" or "−6h 00m" (true minus sign). */
 export function formatDelta(minutes: number): string {
   const sign = minutes < 0 ? "−" : "+";

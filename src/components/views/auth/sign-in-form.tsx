@@ -1,5 +1,6 @@
 "use client";
 
+import { TriangleAlert } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,10 @@ export function SignInForm({ mock, next }: { mock: boolean; next?: string }) {
     setMissing({});
     setError(null);
     setSending(true);
-    const result = await api.signIn({ email, password, rememberMe: remember });
+    // The checkbox is phone-only (canvas). On the desktop layout, used by HR on
+    // office computers, the session ends when the browser closes.
+    const desktop = window.matchMedia("(min-width: 768px)").matches;
+    const result = await api.signIn({ email, password, rememberMe: remember && !desktop });
     if (result.ok) {
       // A full navigation so the next page is rendered with the new session cookie.
       window.location.assign(safeNext(next) ?? result.redirectTo);
@@ -51,16 +55,23 @@ export function SignInForm({ mock, next }: { mock: boolean; next?: string }) {
   }
 
   return (
-    <form noValidate onSubmit={submit} className="flex flex-col gap-4 px-6 pb-safe-or-4 pt-6">
+    <form noValidate onSubmit={submit} className="flex flex-col gap-4 px-6 pb-safe-or-4 pt-6 md:gap-5">
       <div>
-        <h1 className="font-heading text-[26px] font-bold uppercase leading-8 tracking-[0.01em]">Sign in</h1>
-        <p className="mt-1 text-sm leading-[21px] text-muted-foreground">Use the email your account was set up with.</p>
+        <h1 className="font-heading text-[26px] font-bold uppercase leading-8 tracking-[0.01em] md:text-[28px] md:leading-[34px]">
+          Sign in
+        </h1>
+        <p className="mt-1 text-sm leading-[21px] text-muted-foreground">Use the email HR set up for your account.</p>
       </div>
 
       {error ? (
-        <p id="signin-error" role="alert" className="rounded-btn bg-attn-bg px-3.5 py-2.5 text-[13px] font-medium leading-[19px] text-attn">
-          {error}
-        </p>
+        <div
+          id="signin-error"
+          role="alert"
+          className="flex items-start gap-2.5 rounded-btn border border-attn/35 bg-attn-bg px-3.5 py-3 text-[13px] leading-[19px]"
+        >
+          <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-attn" />
+          <p>{error}</p>
+        </div>
       ) : null}
 
       <div className="flex flex-col gap-1.5">
@@ -98,7 +109,7 @@ export function SignInForm({ mock, next }: { mock: boolean; next?: string }) {
         />
       </div>
 
-      <label className="flex min-h-11 items-center gap-2.5 text-sm leading-5">
+      <label className="flex min-h-11 items-center gap-2.5 text-sm leading-5 md:hidden">
         <input
           type="checkbox"
           checked={remember}
@@ -112,9 +123,15 @@ export function SignInForm({ mock, next }: { mock: boolean; next?: string }) {
         {sending ? "Signing in…" : "Sign in"}
       </Button>
 
-      <p className="mt-2 text-[13px] leading-[19px] text-muted-foreground">
+      <p className="mt-2 text-[13px] leading-[19px] text-muted-foreground md:hidden">
         Staying signed in means each day is just one scan. Forgot your password? Ask HR for a new setup link.
       </p>
+      <div className="hidden flex-col gap-4 border-t border-border pt-4 md:flex">
+        <p className="text-[13px] leading-[19px] text-muted-foreground">
+          Forgot your password? HR can send you a new setup link. There&apos;s no public sign-up: HR creates every account.
+        </p>
+        <p className="text-xs leading-[18px] text-muted-foreground">Interns: sign in on your phone, then scan at the office entrance.</p>
+      </div>
     </form>
   );
 }

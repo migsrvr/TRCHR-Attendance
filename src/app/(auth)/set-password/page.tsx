@@ -22,6 +22,14 @@ export default async function SetPasswordPage({ searchParams }: { searchParams: 
       {form}
     </AuthFrame>
   ) : (
-    <AuthFrame variant="brand">{form}</AuthFrame>
+    <AuthFrame
+      variant="brand"
+      panel={{
+        title: "One step to finish your account",
+        body: "Choose a password. Next time, sign in with your email and this password.",
+      }}
+    >
+      {form}
+    </AuthFrame>
   );
 }

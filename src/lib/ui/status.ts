@@ -140,3 +140,8 @@ export function presentStatus(kind: StatusKind, audience: Audience): StatusPrese
       return unreachable(kind);
   }
 }
+
+/** A pending correction old enough to escalate; HR lists show its age in the attention color. */
+export function isOverdue(kind: StatusKind): boolean {
+  return kind.type === "correction" && kind.value === "PENDING" && (kind.ageWorkdays ?? 0) >= REVIEW_THRESHOLD_WORKDAYS;
+}
