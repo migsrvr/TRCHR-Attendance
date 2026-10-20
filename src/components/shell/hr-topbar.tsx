@@ -1,4 +1,4 @@
-import { Bell, Search } from "lucide-react";
+import { Bell, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
 
 import type { HrIdentityVM } from "@/lib/ui/view-models";
@@ -7,16 +7,29 @@ export function HrTopbar({
   title,
   identity,
   reviewCount,
+  breadcrumb,
 }: {
   title: string;
   identity: HrIdentityVM;
   reviewCount: number;
+  /** Parent page, shown before the title (e.g. Interns > Ana Reyes). */
+  breadcrumb?: { href: string; label: string };
 }) {
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
-      <h1 className="truncate font-heading text-base font-bold leading-[22px]">{title}</h1>
+      {breadcrumb ? (
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5">
+          <Link href={breadcrumb.href} className="shrink-0 font-heading text-base font-bold leading-[22px] text-muted-foreground hover:text-foreground">
+            {breadcrumb.label}
+          </Link>
+          <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          <h1 className="truncate font-heading text-base font-bold leading-[22px]">{title}</h1>
+        </nav>
+      ) : (
+        <h1 className="truncate font-heading text-base font-bold leading-[22px]">{title}</h1>
+      )}
       <div className="ml-auto flex items-center gap-2">
-        <form action="/hr/interns" role="search" className="hidden md:block">
+        <form action="/hr/interns" role="search" className="hidden lg:block">
           <label className="flex h-9 w-60 items-center gap-2 rounded-btn border border-border bg-card px-3 text-[13px] text-muted-foreground focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
             <Search aria-hidden="true" className="size-4 shrink-0" />
             <span className="sr-only">Search interns</span>
@@ -51,7 +64,7 @@ export function HrTopbar({
           >
             {identity.initials}
           </span>
-          <div className="hidden sm:block">
+          <div className="hidden whitespace-nowrap lg:block">
             <p className="text-[13px] font-semibold leading-[18px]">{identity.name}</p>
             <p className="text-xs leading-4 text-muted-foreground">{identity.roleLabel}</p>
           </div>

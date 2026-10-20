@@ -13,11 +13,13 @@ export function HrShell({
   shell,
   active,
   title,
+  breadcrumb,
   children,
 }: {
   shell: HrShellVM;
   active: HrNavId;
   title: string;
+  breadcrumb?: { href: string; label: string };
   children: ReactNode;
 }) {
   return (
@@ -30,7 +32,7 @@ export function HrShell({
       </a>
       <HrSidebar active={active} reviewCount={shell.reviewCount} officeLabel={shell.officeLabel} />
       <div className="flex min-w-0 flex-col">
-        <HrTopbar title={title} identity={shell.identity} reviewCount={shell.reviewCount} />
+        <HrTopbar title={title} breadcrumb={breadcrumb} identity={shell.identity} reviewCount={shell.reviewCount} />
         <main id="hr-main" className="flex-1 p-4 sm:p-8">
           <div className="mx-auto flex max-w-content flex-col gap-5">{children}</div>
         </main>

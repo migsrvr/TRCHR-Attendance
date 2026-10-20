@@ -75,7 +75,7 @@ export function OverviewView({ data }: { data: HrOverviewVM }) {
               <FileText aria-hidden="true" />
               Generate DTR
             </ButtonLink>
-            <ButtonLink href="/hr/interns">
+            <ButtonLink href="/hr/interns?add=1">
               <UserPlus aria-hidden="true" />
               Add intern
             </ButtonLink>

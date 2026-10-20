@@ -4,7 +4,7 @@
  * office-local "YYYY-MM-DD", durations are integer minutes.
  */
 
-import type { CorrectionRequestStatus } from "@prisma/client";
+import type { CorrectionRequestStatus, UserStatus } from "@prisma/client";
 
 import type { CorrectionProposal, CorrectionReason, RecordedDay } from "@/lib/ui/correction-form";
 import type { StatusKind } from "@/lib/ui/status";
@@ -197,4 +197,75 @@ export interface HrOverviewVM {
   behindPace: HoursRowVM[];
   /** Nearest end date first. */
   finishingSoon: HoursRowVM[];
+}
+
+export type InternAccountTab = "all" | "active" | "pending" | "finished" | "disabled";
+
+export interface InternListRowVM {
+  id: string;
+  name: string;
+  email: string;
+  department: string;
+  creditedMinutes: number;
+  requiredMinutes: number;
+  startDateIso: string;
+  endDateIso: string | null;
+  tab: Exclude<InternAccountTab, "all">;
+  /** Account or internship status, as drawn in the Account column. */
+  status: StatusKind;
+  /** Setup pending: when the last link went out. */
+  setupLinkSentIso?: string;
+}
+
+export interface InternListVM {
+  tab: InternAccountTab;
+  query: string;
+  department: string | null;
+  counts: Record<InternAccountTab, number>;
+  rows: InternListRowVM[];
+  /** Rows in the current tab before paging (from the server). */
+  total: number;
+  hasNextPage: boolean;
+  page: number;
+  departments: string[];
+  officeLabel: string;
+  defaultRequiredMinutes: number;
+}
+
+export interface InternProfileVM {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  department: string;
+  departmentSinceIso: string;
+  startDateIso: string;
+  endDateIso: string | null;
+  officeName: string;
+  todayIso: string;
+  nowClock: string;
+  /** Live status for today, e.g. In office since 08:57; null if not started. */
+  today: { status: StatusKind; time?: string } | null;
+  hours: {
+    creditedMinutes: number;
+    requiredMinutes: number;
+    workdaysLeft?: number;
+    pendingCorrections: number;
+    /** Engine estimate of what open corrections would add if approved. */
+    pendingCreditMinutes: number;
+  };
+  /** Missing for interns with no attendance yet. */
+  stats?: {
+    daysAttended: number;
+    corrections: { total: number; approved: number; rejected: number; open: number };
+    rejectedScans: number;
+    lastRejectedScan?: { dateIso: string; reason: string };
+  };
+  policyLabel: string;
+  schedule: { start: string; end: string };
+  account: { status: UserStatus; lastSignInLabel?: string };
+  /** Last 7 days, newest first. */
+  recentDays: HistoryDayVM[];
+  corrections: { id: string; dateIso: string; reason: CorrectionReason; status: StatusKind }[];
+  assignments: { department: string; fromIso: string; toIso: string | null }[];
 }

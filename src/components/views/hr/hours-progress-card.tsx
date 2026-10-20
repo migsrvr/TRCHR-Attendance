@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useState } from "react";
 
 import { CardHeader } from "@/components/ui/card";
+import { TabList, tabPanelProps } from "@/components/ui/tab-list";
 import { formatDuration, formatHours, formatShortDate } from "@/lib/ui/format";
 import { hoursProgress, paceStatus } from "@/lib/ui/hours";
 import type { HoursRowVM } from "@/lib/ui/view-models";
@@ -21,7 +22,7 @@ const TD = "px-3 py-3 border-b border-hairline group-last:border-b-0";
 
 function HoursTable({ rows }: { rows: HoursRowVM[] }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full min-w-[720px] border-collapse">
         <thead>
           <tr>
@@ -84,25 +85,9 @@ function HoursTable({ rows }: { rows: HoursRowVM[] }) {
   );
 }
 
-/** Hours progress with a Behind pace / Finishing soon switch (WAI-ARIA tabs, arrow keys move between them). */
+/** Hours progress with a Behind pace / Finishing soon switch. */
 export function HoursProgressCard({ behindPace, finishingSoon }: { behindPace: HoursRowVM[]; finishingSoon: HoursRowVM[] }) {
   const [active, setActive] = useState<TabId>("behind");
-  const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({ behind: null, finishing: null });
-
-  function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return;
-    event.preventDefault();
-    const index = TABS.findIndex((tab) => tab.id === active);
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? TABS.length - 1
-          : (index + (event.key === "ArrowRight" ? 1 : -1) + TABS.length) % TABS.length;
-    const id = TABS[next]!.id;
-    setActive(id);
-    tabRefs.current[id]?.focus();
-  }
 
   return (
     <section aria-labelledby="hours-title" className="min-w-0 rounded-card border border-border bg-card shadow-card">
@@ -114,36 +99,9 @@ export function HoursProgressCard({ behindPace, finishingSoon }: { behindPace: H
             ? "Credited hours against each intern's required hours · furthest behind first"
             : "Credited hours against each intern's required hours · nearest end date first"
         }
-        action={
-          <div role="tablist" aria-label="Hours view" className="inline-flex gap-1 rounded-btn bg-muted p-1">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                ref={(node) => {
-                  tabRefs.current[tab.id] = node;
-                }}
-                type="button"
-                role="tab"
-                id={`hours-tab-${tab.id}`}
-                aria-controls="hours-panel"
-                aria-selected={active === tab.id}
-                tabIndex={active === tab.id ? 0 : -1}
-                onClick={() => setActive(tab.id)}
-                onKeyDown={onKeyDown}
-                className={cn(
-                  "h-[30px] rounded-btnsm px-3 text-[13px]",
-                  active === tab.id
-                    ? "bg-card font-semibold text-foreground shadow-card"
-                    : "font-medium text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        }
+        action={<TabList label="Hours view" idBase="hours" tabs={TABS} active={active} onChange={setActive} />}
       />
-      <div role="tabpanel" id="hours-panel" aria-labelledby={`hours-tab-${active}`}>
+      <div {...tabPanelProps("hours", active)}>
         <HoursTable rows={active === "behind" ? behindPace : finishingSoon} />
       </div>
     </section>

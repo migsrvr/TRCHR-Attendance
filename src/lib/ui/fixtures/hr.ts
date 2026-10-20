@@ -1,5 +1,6 @@
 /**
- * Sample data for the HR screens, transcribed from the canvas Overview.
+ * Sample data for the HR screens, transcribed from the canvas Overview,
+ * Interns and Intern profile artboards.
  * Only src/lib/ui/queries/* may import this file.
  *
  * Canvas attendance records on Oct 17–18 (a weekend) are moved to weekdays,
@@ -9,7 +10,14 @@
  */
 
 import { ANA, ANA_HOURS } from "@/lib/ui/fixtures/intern";
-import type { HoursRowVM, HrIdentityVM, NeedsYouItemVM, OfficeTodayItemVM } from "@/lib/ui/view-models";
+import type {
+  HoursRowVM,
+  HrIdentityVM,
+  InternAccountTab,
+  InternListRowVM,
+  NeedsYouItemVM,
+  OfficeTodayItemVM,
+} from "@/lib/ui/view-models";
 
 export const HR_IDENTITY: HrIdentityVM = { name: "[HR NAME]", roleLabel: "HR admin", initials: "HR" };
 
@@ -94,3 +102,87 @@ export const HOURS_ROWS: HoursRowVM[] = [
   { internId: "paolo-cruz", name: "Paolo Cruz", department: "Sales Ops", creditedMinutes: 26500, requiredMinutes: 29160, endDateIso: "2026-11-06", paceDeltaMinutes: -200 },
   { internId: "nina-garcia", name: "Nina Garcia", department: "Leasing", creditedMinutes: 26310, requiredMinutes: 29160, endDateIso: "2026-11-13", paceDeltaMinutes: 10 },
 ];
+
+export const DEPARTMENTS = ["Finance", "IT", "Leasing", "Marketing", "Sales Ops"];
+
+export const OFFICE_NAME = "Top Realty office";
+
+export const POLICY_LABEL = "Version 2 · 09:00–18:00, 60-min break";
+
+/** Directory totals from the canvas; the sample rows below are one page of them. */
+export const INTERN_COUNTS: Record<InternAccountTab, number> = { all: 37, active: 24, pending: 3, finished: 9, disabled: 1 };
+
+const email = (name: string) => `${name.toLowerCase().replace(/\s+/g, ".")}@[company email]`;
+
+function activeRow(internId: string, startDateIso: string): InternListRowVM {
+  const hours = HOURS_ROWS.find((row) => row.internId === internId)!;
+  return {
+    id: internId,
+    name: hours.name,
+    email: email(hours.name),
+    department: hours.department,
+    creditedMinutes: hours.creditedMinutes,
+    requiredMinutes: hours.requiredMinutes,
+    startDateIso,
+    endDateIso: hours.endDateIso,
+    tab: "active",
+    status: { type: "account", value: "ACTIVE" },
+  };
+}
+
+/** Sample directory page, in the canvas order. */
+export const INTERN_ROWS: InternListRowVM[] = [
+  activeRow("ana-reyes", "2026-07-21"),
+  activeRow("bea-santos", "2026-09-01"),
+  activeRow("carlo-bautista", "2026-08-04"),
+  {
+    id: "rina-mendoza",
+    name: "Rina Mendoza",
+    email: email("Rina Mendoza"),
+    department: "Leasing",
+    creditedMinutes: 0,
+    requiredMinutes: 29160,
+    startDateIso: "2026-10-26",
+    endDateIso: "2027-02-27",
+    tab: "pending",
+    status: { type: "account", value: "PENDING" },
+    setupLinkSentIso: "2026-10-18",
+  },
+  {
+    id: "miguel-torres",
+    name: "Miguel Torres",
+    email: email("Miguel Torres"),
+    department: "IT",
+    creditedMinutes: 29160,
+    requiredMinutes: 29160,
+    startDateIso: "2026-06-02",
+    endDateIso: "2026-10-10",
+    tab: "finished",
+    status: { type: "internship", value: "COMPLETED" },
+  },
+  {
+    id: "joel-navarro",
+    name: "Joel Navarro",
+    email: email("Joel Navarro"),
+    department: "Marketing",
+    creditedMinutes: 3500,
+    requiredMinutes: 29160,
+    startDateIso: "2026-08-18",
+    endDateIso: "2026-12-19",
+    tab: "disabled",
+    status: { type: "account", value: "DISABLED" },
+  },
+  activeRow("marco-dela-cruz", "2026-08-18"),
+  activeRow("jessa-lim", "2026-06-01"),
+  activeRow("paolo-cruz", "2026-07-06"),
+  activeRow("nina-garcia", "2026-07-13"),
+];
+
+/** Ana's profile extras beyond what the intern fixtures already hold. */
+export const ANA_PROFILE = {
+  departmentSinceIso: "2026-07-21",
+  lastSignInLabel: "today, 08:56",
+  daysAttended: 49,
+  rejectedScans: 1,
+  lastRejectedScan: { dateIso: "2026-09-22", reason: "poor accuracy" },
+};
