@@ -60,6 +60,13 @@ export function formatShortDate(isoDate: string, options: { weekday?: boolean } 
   }).format(officeDate(isoDate));
 }
 
+/** Day group heading, e.g. "Monday, Oct 19". */
+export function formatDayHeading(isoDate: string): string {
+  return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(
+    officeDate(isoDate),
+  );
+}
+
 /** "Monday, October 19, 2026", or "Monday, October 19" without the year. */
 export function formatLongDate(isoDate: string, options: { year?: boolean } = {}): string {
   return new Intl.DateTimeFormat("en-US", {

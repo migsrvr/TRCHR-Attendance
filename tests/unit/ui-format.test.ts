@@ -4,6 +4,7 @@ import {
   formatClock,
   formatDelta,
   formatDuration,
+  formatDayHeading,
   formatHours,
   formatLongDate,
   formatMonthLabel,
@@ -74,5 +75,11 @@ describe("formatHours", () => {
   it("shows a requirement in whole hours", () => {
     expect(formatHours(29160)).toBe("486h");
     expect(formatHours(36000)).toBe("600h");
+  });
+});
+
+describe("formatDayHeading", () => {
+  it("names the weekday in full", () => {
+    expect(formatDayHeading("2026-10-19")).toBe("Monday, Oct 19");
   });
 });

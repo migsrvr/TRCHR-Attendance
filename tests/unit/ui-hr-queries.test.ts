@@ -5,10 +5,11 @@ import {
   getHrShell,
   getInternList,
   getInternProfile,
+  getAttendance,
   getReviewDetail,
   getReviewQueue,
 } from "@/lib/ui/queries/hr";
-import { getInternHome } from "@/lib/ui/queries/intern";
+import { getInternHistory, getInternHome } from "@/lib/ui/queries/intern";
 
 describe("HR sample data", () => {
   it("shows the same waiting count in the sidebar, the KPI and the Needs you list", async () => {
@@ -123,5 +124,57 @@ describe("Reviews sample data", () => {
     expect(detail.comments.map((comment) => comment.author)).toEqual(["intern", "hr", "intern"]);
     expect(detail.jev).toMatchObject({ status: "read", version: 3 });
     expect(detail.hours.creditedMinutes).toBe(18750);
+  });
+});
+
+describe("Attendance sample data", () => {
+  it("groups weekdays newest first, with today flagged", async () => {
+    const { days } = await getAttendance({});
+    const dates = days.map((day) => day.dateIso);
+    expect(dates).toEqual([...dates].sort().reverse());
+    expect(days[0]).toMatchObject({ dateIso: "2026-10-19", isToday: true });
+    for (const date of dates) expect([0, 6]).not.toContain(new Date(`${date}T00:00:00Z`).getUTCDay());
+  });
+
+  it("agrees with Ana's history and the Overview's office list", async () => {
+    const [{ days }, history, overview] = await Promise.all([getAttendance({}), getInternHistory("2026-10"), getHrOverview()]);
+    for (const day of days) {
+      const ana = day.rows.find((row) => row.internId === "ana-reyes");
+      const own = history.days.find((candidate) => candidate.dateIso === day.dateIso);
+      if (ana && own) expect(ana.creditedMinutes ?? null, day.dateIso).toBe(own.kind === "incomplete" ? null : own.creditedMinutes);
+    }
+    const today = days[0]!.rows;
+    for (const item of overview.officeToday) {
+      expect(today.find((row) => row.internId === item.internId)?.status, item.name).toEqual(item.status);
+    }
+  });
+
+  it("holds Luis's after-midnight session with no credit", async () => {
+    const { days } = await getAttendance({ status: "review" });
+    const luis = days.flatMap((day) => day.rows).find((row) => row.id === "sess-luis-oct16")!;
+    expect(luis).toMatchObject({ held: true, creditedMinutes: null, status: { type: "session", value: "REVIEW" } });
+    expect(days.flatMap((day) => day.rows).every((row) => row.filter === "review")).toBe(true);
+  });
+
+  it("filters by intern and department, dropping empty days", async () => {
+    const luis = await getAttendance({ query: "luis" });
+    expect(luis.days.flatMap((day) => day.rows.map((row) => row.internName))).toEqual(["Luis Ramos"]);
+    expect(luis.days).toHaveLength(1);
+    const it = await getAttendance({ department: "IT" });
+    expect(it.days.flatMap((day) => day.rows).every((row) => row.department === "IT")).toBe(true);
+  });
+
+  it("opens a detail for every row, and explains Luis's held session", async () => {
+    const all = await getAttendance({});
+    for (const row of all.days.flatMap((day) => day.rows)) {
+      expect((await getAttendance({ session: row.id })).selected?.id, row.id).toBe(row.id);
+    }
+    expect((await getAttendance({ session: "nope" })).selected).toBeNull();
+    const luis = (await getAttendance({ session: "sess-luis-oct16" })).selected!;
+    expect(luis.heldReason).toMatch(/next calendar day/);
+    expect(luis.scans.map((scan) => scan.time)).toEqual(["16:10:07", "00:40:51"]);
+    expect(luis.scans[1]!.dateIso).toBe("2026-10-17");
+    expect(luis.canAskForCorrection).toBe(true);
+    expect(luis.elapsedMinutes).toBe(510);
   });
 });

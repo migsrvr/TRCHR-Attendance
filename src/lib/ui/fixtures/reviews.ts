@@ -35,7 +35,7 @@ export const REVIEW_ROWS: ReviewRowVM[] = [
   waitingRow("corr-oct15", "Marketing", { label: "Add Time out", value: "18:05" }, "Missed clock-out"),
   waitingRow("corr-paolo-oct16", "Sales Ops", { label: "Change Time in to", value: "08:40" }, "Technical issue"),
   waitingRow("corr-bea-oct14", "Finance", { label: "Missing day", value: "09:00–18:00" }, null),
-  waitingRow("sess-luis-oct16", "IT", { label: "Time out after midnight", value: "00:40" }, null),
+  waitingRow("sess-luis-oct16", "Sales Ops", { label: "Time out after midnight", value: "00:40" }, null),
   {
     id: "corr-marco-oct16",
     href: "/hr/reviews/corr-marco-oct16",

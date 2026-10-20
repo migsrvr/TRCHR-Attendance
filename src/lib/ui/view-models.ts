@@ -354,3 +354,78 @@ export interface ReviewDetailVM {
   history: { label: string; atLabel: string }[];
   decisionNote?: string;
 }
+
+export type AttendanceStatusFilter = "all" | "open" | "complete" | "review" | "rejected";
+
+export interface AttendanceRowVM {
+  /** The intern's sessions that office day. */
+  id: string;
+  internId: string;
+  internName: string;
+  department: string;
+  sessions: DaySessionVM[];
+  /** Draw the bar as held for review (dashed). */
+  held: boolean;
+  /** Replaces the computed times summary, e.g. "16:10 → 00:40 next day". */
+  summary?: string;
+  /** Linked request, e.g. "correction pending". */
+  note?: { label: string; href: string };
+  /** null = nothing to credit yet (open or held). */
+  creditedMinutes: number | null;
+  status: StatusKind;
+  filter: Exclude<AttendanceStatusFilter, "all">;
+}
+
+export interface AttendanceDayVM {
+  dateIso: string;
+  isToday: boolean;
+  scans: number;
+  rows: AttendanceRowVM[];
+}
+
+export interface SessionScanVM {
+  action: "IN" | "OUT";
+  /** Office-local "HH:MM:SS". */
+  time: string;
+  /** Set when the scan was on a different office day than the session. */
+  dateIso?: string;
+  qrLabel: string;
+  distanceM: number;
+  accepted: boolean;
+  rejectReason?: string;
+}
+
+export interface SessionDetailVM {
+  id: string;
+  internId: string;
+  internName: string;
+  department: string;
+  dateIso: string;
+  version: number;
+  policyVersion: number;
+  status: StatusKind;
+  /** Why the session earns nothing yet, for held sessions. */
+  heldReason?: string;
+  /** Effective times after any approved corrections. */
+  effective: { timeIn: string | null; timeOut: string | null; timeOutDateIso?: string }[];
+  elapsedMinutes: number | null;
+  creditedMinutes: number | null;
+  scans: SessionScanVM[];
+  revisions: { label: string; atLabel: string; before: string; after: string }[];
+  correction?: { label: string; href: string };
+  /** Held sessions with no request yet: HR can ask the intern to send one. */
+  canAskForCorrection: boolean;
+}
+
+export interface AttendanceVM {
+  query: string;
+  department: string | null;
+  status: AttendanceStatusFilter;
+  periodLabel: string;
+  todayIso: string;
+  nowClock: string;
+  schedule: { start: string; end: string };
+  departments: string[];
+  days: AttendanceDayVM[];
+  selected: SessionDetailVM | null;
+}

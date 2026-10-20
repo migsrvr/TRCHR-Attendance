@@ -18,11 +18,16 @@ import {
   OVERVIEW_COUNTS,
   POLICY_LABEL,
 } from "@/lib/ui/fixtures/hr";
+import { ATTENDANCE_DAYS, ATTENDANCE_PERIOD_LABEL, canAskForCorrection, SESSION_EXTRAS } from "@/lib/ui/fixtures/attendance";
 import { REVIEW_COUNTS, REVIEW_DETAILS, REVIEW_ROWS } from "@/lib/ui/fixtures/reviews";
 import { ANA_HOURS, CORRECTIONS, OCTOBER_DAYS, SCHEDULE, SNAPSHOT_NOW, SNAPSHOT_TODAY } from "@/lib/ui/fixtures/intern";
 import { DEFAULT_REQUIRED_HOURS } from "@/lib/ui/intern-form";
 import type { StatusKind } from "@/lib/ui/status";
+import { clockToMinutes } from "@/lib/ui/timeline";
 import type {
+  AttendanceRowVM,
+  AttendanceStatusFilter,
+  AttendanceVM,
   HrOverviewVM,
   HrShellVM,
   InternAccountTab,
@@ -31,6 +36,8 @@ import type {
   ReviewDetailVM,
   ReviewQueueVM,
   ReviewTab,
+  SessionDetailVM,
+  SessionScanVM,
 } from "@/lib/ui/view-models";
 
 const HOURS_ROWS_SHOWN = 4;
@@ -228,4 +235,89 @@ export async function getReviewDetail(id: string): Promise<ReviewDetailVM | null
   // TODO(module): src/modules/corrections getCorrectionForReview (with version,
   // revisions, Jev run and the day's scan evidence).
   return REVIEW_DETAILS[id] ?? null;
+}
+
+const ATTENDANCE_FILTERS: AttendanceStatusFilter[] = ["all", "open", "complete", "review", "rejected"];
+
+/** Sample scans for a session's times: an IN at each start and an OUT at each end. */
+function sampleScans(row: AttendanceRowVM): SessionScanVM[] {
+  return row.sessions.flatMap((session, index) => {
+    const seconds = (offset: number) => String((row.id.length * 7 + index * 13 + offset) % 60).padStart(2, "0");
+    const scans: SessionScanVM[] = [
+      { action: "IN", time: `${session.start}:${seconds(0)}`, qrLabel: "Main entrance · IN", distanceM: 14 + index * 5, accepted: true },
+    ];
+    if (session.end) {
+      scans.push({ action: "OUT", time: `${session.end}:${seconds(29)}`, qrLabel: "Main entrance · OUT", distanceM: 19 + index * 4, accepted: true });
+    }
+    return scans;
+  });
+}
+
+function sessionDetail(row: AttendanceRowVM, dateIso: string): SessionDetailVM {
+  const extra = SESSION_EXTRAS[row.id] ?? {};
+  const closed = row.sessions.filter((session) => session.end);
+  return {
+    id: row.id,
+    internId: row.internId,
+    internName: row.internName,
+    department: row.department,
+    dateIso,
+    version: 1,
+    policyVersion: 2,
+    status: row.status,
+    effective: row.sessions.map((session) => ({ timeIn: session.start, timeOut: session.end })),
+    elapsedMinutes:
+      closed.length && closed.length === row.sessions.length
+        ? closed.reduce((sum, session) => sum + clockToMinutes(session.end!) - clockToMinutes(session.start), 0)
+        : null,
+    creditedMinutes: row.creditedMinutes,
+    scans: sampleScans(row),
+    revisions: [],
+    correction: row.note ? { label: "Open the request", href: row.note.href } : undefined,
+    canAskForCorrection: canAskForCorrection(row),
+    ...extra,
+  };
+}
+
+export async function getAttendance(filters: {
+  query?: string;
+  department?: string | null;
+  status?: AttendanceStatusFilter;
+  session?: string;
+}): Promise<AttendanceVM> {
+  // TODO(module): src/modules/attendance listSessionsByDay (office-day grouping,
+  // effective sessions) and getSessionDetail (original scans, revisions).
+  const query = (filters.query ?? "").trim();
+  const department = filters.department && DEPARTMENTS.includes(filters.department) ? filters.department : null;
+  const status = filters.status && ATTENDANCE_FILTERS.includes(filters.status) ? filters.status : "all";
+  const needle = query.toLowerCase();
+  const days = ATTENDANCE_DAYS.map((day) => ({
+    ...day,
+    isToday: day.dateIso === SNAPSHOT_TODAY,
+    rows: day.rows.filter(
+      (row) =>
+        (status === "all" || row.filter === status) &&
+        (!department || row.department === department) &&
+        (!needle || row.internName.toLowerCase().includes(needle)),
+    ),
+  })).filter((day) => day.rows.length);
+
+  let selected: SessionDetailVM | null = null;
+  for (const day of ATTENDANCE_DAYS) {
+    const row = day.rows.find((candidate) => candidate.id === filters.session);
+    if (row) selected = sessionDetail(row, day.dateIso);
+  }
+
+  return {
+    query,
+    department,
+    status,
+    periodLabel: ATTENDANCE_PERIOD_LABEL,
+    todayIso: SNAPSHOT_TODAY,
+    nowClock: SNAPSHOT_NOW,
+    schedule: SCHEDULE,
+    departments: DEPARTMENTS,
+    days,
+    selected,
+  };
 }
