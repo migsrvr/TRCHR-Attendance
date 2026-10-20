@@ -59,4 +59,25 @@ These use sample data (Ana Reyes, October 2026) until the attendance and correct
 - [ ] Submitting with mistakes shows the errors and jumps to the first one; a valid request shows **Sent to HR**.
 - [ ] Correction detail: the reply box isn't hidden behind the keyboard, and a sent reply appears at the bottom of the conversation.
 
+### Sign-in, set password and first run
+
+In development these use a mock instead of Better Auth, so nothing is saved:
+
+| Page | Try |
+| --- | --- |
+| `/sign-in` | Any email and password signs in (an email starting with `hr` goes to `/hr`). The password `wrong` shows the error. |
+| `/set-password?token=demo-intern` | Intern setup (Rina): continues to the camera and location steps. |
+| `/set-password?token=demo-hr` | HR setup: goes straight to `/hr`. |
+| `/set-password?token=expired` | The expired-link screen. |
+| `/welcome/camera`, `/welcome/location` | The first-run permission steps on their own. |
+
+- [ ] Sign in: the navy band runs up under the status bar / notch; the email field opens the email keyboard with no auto-capital or autocorrect.
+- [ ] iCloud Keychain (iPhone) and Google Password Manager (Android) offer to fill on sign-in, and offer to save (or suggest a strong password) on set password, with the right email.
+- [ ] The eye button shows and hides the password; the checklist ticks as you type.
+- [ ] With the keyboard open, **Sign in** / **Save and continue** can be reached by scrolling.
+- [ ] Camera step: **Allow camera** brings up the phone's prompt; **Don't Allow** shows the steps for that phone, and **Try again** works after fixing.
+- [ ] Location step: the precise-location tip matches the phone (iPhone: Precise: On; Android: Precise, not Approximate). **Don't Allow** opens Location is off; **I turned it on, check again** goes to Home once allowed.
+- [ ] Small phones: the illustration is left out and both buttons are visible without scrolling. Tall phones show it.
+- [ ] Opening the setup link from Messenger: the camera step says to open the page in Safari or Chrome.
+
 Report problems with the phone model, OS version, browser and a screenshot.

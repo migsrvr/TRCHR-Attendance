@@ -135,6 +135,30 @@
     -webkit-touch-callout: none;
     user-select: none;
   }
+
+  /*
+   * First-run illustration (176px with its padding). Shown only when the
+   * whole screen, illustration included, fits the small viewport: the
+   * height with Safari's or Chrome's toolbars showing. The page sets
+   * --hero-needs to that total. "* 1000" turns the room left into an on/off
+   * step, so the picture never shrinks to an odd size, and svh doesn't change
+   * when toolbars hide, so it can't pop in mid-scroll. The negative margin
+   * cancels the column gap when it's off. Browsers without svh never show it.
+   */
+  .first-run-hero {
+    height: 0;
+    margin-bottom: -1.25rem;
+    overflow: hidden;
+  }
+  @supports (height: 1svh) {
+    .first-run-hero {
+      --hero-room: calc(
+        100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - var(--hero-needs, 9999px)
+      );
+      height: clamp(0px, calc(var(--hero-room) * 1000), 176px);
+      margin-bottom: clamp(-1.25rem, calc(var(--hero-room) * 1000), 0px);
+    }
+  }
 }
 
 @layer utilities {

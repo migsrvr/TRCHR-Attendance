@@ -82,6 +82,16 @@ export interface NewCorrectionVM {
   recordedByDate: Record<string, RecordedDay>;
 }
 
+export interface SetupLinkVM {
+  email: string;
+  firstName: string;
+  role: "INTERN" | "HR";
+  department?: string;
+  startDateIso?: string;
+  /** e.g. "Oct 25 at 6:00 PM". */
+  expiresLabel: string;
+}
+
 export interface CorrectionMessageVM {
   id: string;
   author: "intern" | "hr";

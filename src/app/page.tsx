@@ -11,6 +11,7 @@ export default function HomePage() {
         implemented yet.
       </p>
       <nav className="flex gap-4 font-semibold text-primary">
+        <Link href="/sign-in">Sign in</Link>
         <Link href="/scan">Intern scan</Link>
         <Link href="/dashboard">Intern home</Link>
         <Link href="/hr">HR</Link>
