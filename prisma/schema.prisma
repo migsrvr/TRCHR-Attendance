@@ -1,0 +1,470 @@
+// Top Realty Intern Attendance System
+// Prisma schema - 13 business entities + 4 operational tables + Better Auth models.
+// Physical additions (scan_intent, scan_receipt, review_job, audit_event) are proposed
+// extensions to the logical ERD documented in Technical Design v1.0, section 3.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  INTERN
+  HR
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum InternshipStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum CheckpointAction {
+  TIME_IN
+  TIME_OUT
+}
+
+enum AttendanceSessionStatus {
+  OPEN
+  COMPLETE
+  REVIEW
+  VOID
+}
+
+enum ScanValidationStatus {
+  ACCEPTED
+  REJECTED
+  UNCERTAIN
+}
+
+enum CorrectionRequestStatus {
+  PENDING
+  NEEDS_INFO
+  APPROVED
+  REJECTED
+  SUPERSEDED
+}
+
+enum HrDecision {
+  APPROVE
+  REJECT
+  NEEDS_INFO
+}
+
+enum JevRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SUPERSEDED
+}
+
+enum ReviewJobState {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  MANUAL_REVIEW
+}
+
+// ---------------------------------------------------------------------------
+// Better Auth infrastructure tables
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String     @id @default(uuid()) @db.Uuid
+  name          String
+  email         String     @unique
+  emailVerified Boolean    @default(false) @map("email_verified")
+  image         String?
+  role          UserRole   @default(INTERN)
+  status        UserStatus @default(PENDING)
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  sessions     Session[]
+  accounts     Account[]
+  internships  Internship[]
+  reviews      HrReview[]
+  comments     CorrectionComment[]
+  scanIntents  ScanIntent[]
+  scanReceipts ScanReceipt[]
+  auditEvents  AuditEvent[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  expiresAt DateTime @map("expires_at")
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id") @db.Uuid
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// Business entities
+// ---------------------------------------------------------------------------
+
+model Department {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  internships Internship[]
+
+  @@map("department")
+}
+
+model Office {
+  id                   String   @id @default(uuid()) @db.Uuid
+  name                 String
+  latitude             Decimal  @db.Decimal(9, 6)
+  longitude            Decimal  @db.Decimal(9, 6)
+  geofenceRadiusMeters Int      @map("geofence_radius_meters")
+  maxAccuracyMeters    Int      @map("max_accuracy_meters")
+  timezone             String
+  configVersion        Int      @default(1) @map("config_version")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  internships      Internship[]
+  policyVersions   AttendancePolicyVersion[]
+  checkpoints      QrCheckpoint[]
+
+  @@map("office")
+}
+
+model Internship {
+  id                String           @id @default(uuid()) @db.Uuid
+  internUserId      String           @map("intern_user_id") @db.Uuid
+  departmentId      String           @map("department_id") @db.Uuid
+  officeId          String           @map("office_id") @db.Uuid
+  requiredMinutes   Int              @map("required_minutes")
+  startDate         DateTime         @map("start_date") @db.Date
+  endDate           DateTime?        @map("end_date") @db.Date
+  status            InternshipStatus @default(ACTIVE)
+  attendanceVersion Int              @default(1) @map("attendance_version")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  intern             User                @relation(fields: [internUserId], references: [id], onDelete: Restrict)
+  department         Department          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  office             Office              @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  sessions           AttendanceSession[]
+  scans              AttendanceScan[]
+  correctionRequests CorrectionRequest[]
+  scanIntents        ScanIntent[]
+
+  @@index([departmentId])
+  @@index([officeId])
+  @@map("internship")
+}
+
+model AttendancePolicyVersion {
+  id               String   @id @default(uuid()) @db.Uuid
+  officeId         String   @map("office_id") @db.Uuid
+  version          Int
+  scheduleRules    Json     @map("schedule_rules")
+  breakRules       Json     @map("break_rules")
+  creditRules      Json     @map("credit_rules")
+  effectiveFromUtc DateTime @map("effective_from_utc")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  office   Office              @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  sessions AttendanceSession[]
+
+  @@unique([officeId, version])
+  @@map("attendance_policy_version")
+}
+
+model QrCheckpoint {
+  id                String           @id @default(uuid()) @db.Uuid
+  officeId          String           @map("office_id") @db.Uuid
+  name              String
+  action            CheckpointAction
+  active            Boolean          @default(true)
+  credentialVersion Int              @default(1) @map("credential_version")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  office      Office           @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  scans       AttendanceScan[]
+  scanIntents ScanIntent[]
+
+  @@map("qr_checkpoint")
+}
+
+model AttendanceSession {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  internshipId         String                  @map("internship_id") @db.Uuid
+  policyVersionId      String                  @map("policy_version_id") @db.Uuid
+  attendanceDate       DateTime                @map("attendance_date") @db.Date
+  effectiveTimeInUtc   DateTime?               @map("effective_time_in_utc")
+  effectiveTimeOutUtc  DateTime?               @map("effective_time_out_utc")
+  status               AttendanceSessionStatus @default(OPEN)
+  version              Int                     @default(1)
+  timezoneSnapshot     String                  @map("timezone_snapshot")
+  departmentIdSnapshot String                  @map("department_id_snapshot") @db.Uuid
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+
+  internship    Internship               @relation(fields: [internshipId], references: [id], onDelete: Restrict)
+  policyVersion AttendancePolicyVersion  @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  scans         AttendanceScan[]
+  corrections   CorrectionRequest[]
+  revisions     AttendanceRevision[]
+
+  @@index([internshipId, attendanceDate, status])
+  @@map("attendance_session")
+}
+
+model AttendanceScan {
+  id               String               @id @default(uuid()) @db.Uuid
+  internshipId     String               @map("internship_id") @db.Uuid
+  checkpointId     String               @map("checkpoint_id") @db.Uuid
+  sessionId        String?              @map("session_id") @db.Uuid
+  receivedAtUtc    DateTime             @map("received_at_utc")
+  locationEvidence Json                 @map("location_evidence")
+  validationStatus ScanValidationStatus @map("validation_status")
+  validationFlags  Json                 @map("validation_flags")
+  receiptId        String?              @map("receipt_id") @db.Uuid
+  actionSnapshot   CheckpointAction     @map("action_snapshot")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  internship Internship         @relation(fields: [internshipId], references: [id], onDelete: Restrict)
+  checkpoint QrCheckpoint       @relation(fields: [checkpointId], references: [id], onDelete: Restrict)
+  session    AttendanceSession? @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  receipt    ScanReceipt?       @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+
+  @@index([internshipId, receivedAtUtc])
+  @@map("attendance_scan")
+}
+
+model CorrectionRequest {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  internshipId       String                  @map("internship_id") @db.Uuid
+  sessionId          String?                 @map("session_id") @db.Uuid
+  baseSessionVersion Int?                    @map("base_session_version")
+  requestVersion     Int                     @default(1) @map("request_version")
+  payloadHash        String                  @map("payload_hash")
+  attendanceDate     DateTime                @map("attendance_date") @db.Date
+  proposedTimeInUtc  DateTime?               @map("proposed_time_in_utc")
+  proposedTimeOutUtc DateTime?               @map("proposed_time_out_utc")
+  reason             String
+  status             CorrectionRequestStatus @default(PENDING)
+  previousRequestId  String?                 @map("previous_request_id") @db.Uuid
+  submittedAtUtc     DateTime                @default(now()) @map("submitted_at_utc")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  internship      Internship          @relation(fields: [internshipId], references: [id], onDelete: Restrict)
+  session         AttendanceSession?  @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  previousRequest CorrectionRequest?  @relation("CorrectionSupersession", fields: [previousRequestId], references: [id], onDelete: SetNull)
+  replacements    CorrectionRequest[] @relation("CorrectionSupersession")
+  reviews         HrReview[]
+  comments        CorrectionComment[]
+  assessments     JevAssessment[]
+  reviewJobs      ReviewJob[]
+
+  @@index([status, submittedAtUtc, id])
+  @@map("correction_request")
+}
+
+model HrReview {
+  id                  String     @id @default(uuid()) @db.Uuid
+  correctionRequestId String     @map("correction_request_id") @db.Uuid
+  reviewerUserId      String     @map("reviewer_user_id") @db.Uuid
+  operationKey        String     @unique @map("operation_key")
+  decision            HrDecision
+  note                String?
+  reviewedAtUtc       DateTime   @default(now()) @map("reviewed_at_utc")
+
+  correctionRequest CorrectionRequest  @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
+  reviewer          User               @relation(fields: [reviewerUserId], references: [id], onDelete: Restrict)
+  revision          AttendanceRevision?
+
+  @@map("hr_review")
+}
+
+model CorrectionComment {
+  id                  String   @id @default(uuid()) @db.Uuid
+  correctionRequestId String   @map("correction_request_id") @db.Uuid
+  authorUserId        String   @map("author_user_id") @db.Uuid
+  message             String
+  createdAtUtc        DateTime @default(now()) @map("created_at_utc")
+
+  correctionRequest CorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
+  author            User              @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  @@map("correction_comment")
+}
+
+model AttendanceRevision {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionId    String   @map("session_id") @db.Uuid
+  reviewId     String   @unique @map("review_id") @db.Uuid
+  beforeValues Json     @map("before_values")
+  afterValues  Json     @map("after_values")
+  appliedAtUtc DateTime @default(now()) @map("applied_at_utc")
+
+  session AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  review  HrReview          @relation(fields: [reviewId], references: [id], onDelete: Restrict)
+
+  @@map("attendance_revision")
+}
+
+model JevAssessment {
+  id                  String       @id @default(uuid()) @db.Uuid
+  correctionRequestId String       @map("correction_request_id") @db.Uuid
+  requestVersion      Int          @map("request_version")
+  modelVersion        String       @map("model_version")
+  criteriaVersion     String       @map("criteria_version")
+  inputFingerprint    String       @map("input_fingerprint")
+  inputSnapshot       Json         @map("input_snapshot")
+  typedResults        Json?        @map("typed_results")
+  runStatus           JevRunStatus @default(PENDING) @map("run_status")
+  evaluatedAtUtc      DateTime?    @map("evaluated_at_utc")
+  createdAt           DateTime     @default(now()) @map("created_at")
+
+  correctionRequest CorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
+
+  @@unique([correctionRequestId, requestVersion, inputFingerprint, modelVersion, criteriaVersion])
+  @@map("jev_assessment")
+}
+
+// ---------------------------------------------------------------------------
+// Operational tables (physical additions)
+// ---------------------------------------------------------------------------
+
+model ScanIntent {
+  id                        String           @id @default(uuid()) @db.Uuid
+  actorId                   String           @map("actor_id") @db.Uuid
+  internshipId              String           @map("internship_id") @db.Uuid
+  checkpointId              String           @map("checkpoint_id") @db.Uuid
+  actionSnapshot            CheckpointAction @map("action_snapshot")
+  credentialVersion         Int              @map("credential_version")
+  expectedAttendanceVersion Int              @map("expected_attendance_version")
+  expectedSessionId         String?          @map("expected_session_id") @db.Uuid
+  expectedSessionVersion    Int?             @map("expected_session_version")
+  issuedAtUtc               DateTime         @default(now()) @map("issued_at_utc")
+  expiresAtUtc              DateTime         @map("expires_at_utc")
+  consumedReceiptId         String?          @map("consumed_receipt_id") @db.Uuid
+
+  actor      User         @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  internship Internship   @relation(fields: [internshipId], references: [id], onDelete: Restrict)
+  checkpoint QrCheckpoint @relation(fields: [checkpointId], references: [id], onDelete: Restrict)
+
+  @@index([actorId, expiresAtUtc])
+  @@map("scan_intent")
+}
+
+model ScanReceipt {
+  id             String   @id @default(uuid()) @db.Uuid
+  actorId        String   @map("actor_id") @db.Uuid
+  requestKey     String   @map("request_key")
+  payloadHash    String   @map("payload_hash")
+  receivedAtUtc  DateTime @default(now()) @map("received_at_utc")
+  httpStatus     Int      @map("http_status")
+  decisionCode   String   @map("decision_code")
+  resultSnapshot Json     @map("result_snapshot")
+
+  actor User             @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  scans AttendanceScan[]
+
+  @@unique([actorId, requestKey])
+  @@map("scan_receipt")
+}
+
+model ReviewJob {
+  id                  String         @id @default(uuid()) @db.Uuid
+  correctionRequestId String         @map("correction_request_id") @db.Uuid
+  inputFingerprint    String         @map("input_fingerprint")
+  modelVersion        String         @map("model_version")
+  criteriaVersion     String         @map("criteria_version")
+  state               ReviewJobState @default(PENDING)
+  attempts            Int            @default(0)
+  nextRunAtUtc        DateTime       @default(now()) @map("next_run_at_utc")
+  leaseToken          String?        @map("lease_token")
+  leaseExpiresAtUtc   DateTime?      @map("lease_expires_at_utc")
+  lastErrorCode       String?        @map("last_error_code")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  correctionRequest CorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
+
+  @@unique([correctionRequestId, inputFingerprint, modelVersion, criteriaVersion])
+  @@index([state, nextRunAtUtc])
+  @@map("review_job")
+}
+
+model AuditEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  actorId       String?  @map("actor_id") @db.Uuid
+  action        String
+  resourceType  String   @map("resource_type")
+  resourceId    String?  @map("resource_id")
+  beforeValues  Json?    @map("before_values")
+  afterValues   Json?    @map("after_values")
+  occurredAtUtc DateTime @default(now()) @map("occurred_at_utc")
+  correlationId String   @map("correlation_id")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([resourceType, resourceId, occurredAtUtc])
+  @@map("audit_event")
+}

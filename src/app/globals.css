@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Brand tokens (spec 2026-10-19-hr-attendance-ui-design.md, section 2).
+ * Stored as RGB channels so Tailwind opacity modifiers work.
+ */
+:root {
+  --background: 248 250 252;
+  --foreground: 11 18 32;
+  --card: 255 255 255;
+  --muted: 241 245 249;
+  --muted-foreground: 94 109 130;
+  --border: 214 214 214;
+  --hairline: 238 240 243;
+  --ring: 26 65 117;
+  --primary: 26 65 117;
+  --primary-foreground: 255 255 255;
+  --secondary: 148 29 40;
+  --secondary-foreground: 255 255 255;
+  --accent: 54 98 150;
+  --accent-foreground: 255 255 255;
+  --sidebar: 16 41 76;
+  --sidebar-foreground: 226 232 240;
+  --sidebar-accent: 29 67 115;
+  --sidebar-border: 12 32 59;
+  --attn: 148 29 40;
+  --attn-bg: 246 232 233;
+  --pend: 26 65 117;
+  --pend-bg: 232 236 242;
+  --settled: 54 98 150;
+  --negative: 148 29 40;
+  --inactive: 126 137 153;
+  --track: 238 240 243;
+  --schedule-band: 223 229 238;
+  /* Camera viewfinder backdrop; stays dark in both themes. */
+  --viewfinder: 11 18 32;
+
+  /* Light theme only for now; stops Android Chrome's auto-dark from inverting it. */
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --background: 9 18 32;
+  --foreground: 234 240 255;
+  --card: 14 28 51;
+  --muted: 19 36 64;
+  --muted-foreground: 143 160 199;
+  --border: 29 51 86;
+  --hairline: 22 41 74;
+  --ring: 74 123 181;
+  --primary: 54 98 150;
+  --accent: 74 123 181;
+  --sidebar: 10 21 38;
+  --sidebar-foreground: 185 198 234;
+  --sidebar-accent: 23 47 84;
+  --sidebar-border: 19 36 64;
+  --attn: 242 167 174;
+  --attn-bg: 58 26 34;
+  --pend: 169 193 230;
+  --pend-bg: 23 41 74;
+  --settled: 110 151 204;
+  --negative: 224 114 124;
+  --inactive: 91 107 133;
+  --track: 19 36 64;
+  --schedule-band: 27 49 86;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    /* iOS Safari enlarges text on rotation without this. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  label {
+    /* No grey flash on tap (iOS) and no 300 ms double-tap delay (both). */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /*
+   * Full-screen app frame for the phone screens. 100dvh tracks iOS Safari's
+   * collapsing toolbar and Android Chrome's URL bar; 100vh is the fallback for
+   * browsers without dynamic viewport units (iOS < 15.4, Chrome < 108).
+   */
+  .app-frame {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* Phone form fields: 16px stops iOS Safari from zooming in on focus. */
+  .phone-field {
+    font-size: 16px;
+  }
+
+  /*
+   * QR aiming square. Its height is the smallest of 240px, the space it is
+   * centered in (minus breathing room) and 62% of the screen width; the
+   * aspect ratio makes the width match. So it never runs into the hint label
+   * on short phones (iPhone SE with Safari's toolbars) and doesn't balloon on
+   * tall ones. Uses only percentages and vw, which every phone browser
+   * resolves the same way.
+   */
+  .viewfinder-target {
+    height: min(240px, calc(100% - 24px), 62vw);
+    aspect-ratio: 1 / 1;
+  }
+
+  /* The live camera image must not trigger iOS's long-press menu or text selection. */
+  .camera-video {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+}
+
+@layer utilities {
+  /* Safe areas for notches, Dynamic Island and the home indicator (needs viewport-fit=cover). */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pb-safe-or-2 {
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
+  .pb-safe-or-4 {
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  }
+  .px-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}
