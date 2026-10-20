@@ -57,9 +57,7 @@ function DayRow({ day }: { day: HistoryDayVM }) {
           <DayStatus day={day} />
         </div>
         {needsRequest ? (
-          <Link href={`/corrections/new?date=${day.dateIso}`} className="mt-0.5 inline-block text-xs font-semibold leading-4 text-primary">
-            Request a correction
-          </Link>
+          <span className="mt-0.5 inline-block text-xs font-semibold leading-4 text-primary">Request a correction</span>
         ) : null}
       </div>
       <span
@@ -73,11 +71,18 @@ function DayRow({ day }: { day: HistoryDayVM }) {
     </>
   );
 
+  // Rows that lead somewhere are links across their full height, so the tap
+  // target is the whole row rather than a small text link.
   const rowClass = "grid grid-cols-[40px_minmax(0,1fr)_64px] items-center gap-3 px-3.5 py-2.5";
+  const href = day.correction
+    ? `/corrections/${day.correction.id}`
+    : needsRequest
+      ? `/corrections/new?date=${day.dateIso}`
+      : null;
   return (
     <li data-day={day.dateIso} className="border-t border-hairline first:border-t-0">
-      {day.correction ? (
-        <Link href={`/corrections/${day.correction.id}`} className={cn(rowClass, "bg-background active:bg-muted")}>
+      {href ? (
+        <Link href={href} className={cn(rowClass, day.correction && "bg-background", "active:bg-muted")}>
           {body}
         </Link>
       ) : (

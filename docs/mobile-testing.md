@@ -49,4 +49,14 @@ Test at least one iPhone (Safari) and one Android phone (Chrome). If you can, al
 - [ ] Inside Messenger or Facebook, the screen says to open the page in Safari or Chrome.
 - [ ] Text never zooms in when tapping a field (iPhone).
 
+### Home, History and Corrections
+
+These use sample data (Ana Reyes, October 2026) until the attendance and corrections modules are connected. Sending a correction or a reply goes to a development mock and isn't saved.
+
+- [ ] Home, History and Corrections scroll smoothly; the tab bar stays put while scrolling.
+- [ ] History: tapping a day row opens its correction (Oct 15) or a new request for that day (Oct 9).
+- [ ] Request a correction: the date and time pickers open the phone's native picker (iPhone wheels, Android clock); with the keyboard open, the field you're typing in stays visible and **Send to HR** is reachable by scrolling.
+- [ ] Submitting with mistakes shows the errors and jumps to the first one; a valid request shows **Sent to HR**.
+- [ ] Correction detail: the reply box isn't hidden behind the keyboard, and a sent reply appears at the bottom of the conversation.
+
 Report problems with the phone model, OS version, browser and a screenshot.
