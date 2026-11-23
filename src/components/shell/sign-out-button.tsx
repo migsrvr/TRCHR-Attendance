@@ -3,24 +3,30 @@
 import { LogOut } from "lucide-react";
 import { useState } from "react";
 
-import { createHttpAuthApi } from "@/lib/auth/client-api";
+import { useMockMode } from "@/components/shell/dev-mode-banner";
+import { createHttpAuthApi, createMockAuthApi } from "@/lib/auth/client-api";
 import { cn } from "@/lib/utils";
 
-/** Signs out the current Better Auth session and navigates cleanly to /sign-in. */
+/** Signs out the current Better Auth session (or mock session) and navigates cleanly to /sign-in. */
 export function SignOutButton({
   compact = false,
+  mock: mockProp,
   className,
 }: {
   compact?: boolean;
+  mock?: boolean;
   className?: string;
 }) {
+  const { mock: contextMock } = useMockMode();
+  const isMock = mockProp ?? contextMock;
   const [busy, setBusy] = useState(false);
 
   async function handleSignOut() {
     if (busy) return;
     setBusy(true);
     try {
-      await createHttpAuthApi().signOut();
+      const api = isMock ? createMockAuthApi({ delayMs: 100 }) : createHttpAuthApi();
+      await api.signOut();
     } finally {
       window.location.assign("/sign-in");
     }

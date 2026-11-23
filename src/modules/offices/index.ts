@@ -45,6 +45,34 @@ export interface RotateCheckpointResult {
   readonly qrToken: string;
 }
 
+export interface CreateCheckpointInput {
+  readonly actorId: string;
+  readonly officeId?: string;
+  readonly name: string;
+  readonly action: "TIME_IN" | "TIME_OUT";
+  readonly expiresInDays?: number;
+  readonly correlationId: string;
+}
+
+export interface CreateCheckpointResult {
+  readonly id: string;
+  readonly name: string;
+  readonly action: "IN" | "OUT";
+  readonly codeVersion: number;
+  readonly expiresIso: string;
+}
+
+export interface RevokeCheckpointInput {
+  readonly actorId: string;
+  readonly checkpointId: string;
+  readonly correlationId: string;
+}
+
+export interface RevokeCheckpointResult {
+  readonly id: string;
+  readonly revokedIso: string;
+}
+
 export interface UpdateOfficeSettingsInput {
   readonly actorId: string;
   readonly officeId?: string;
@@ -637,4 +665,103 @@ export async function issueCheckpointToken(
     token,
     officeName: checkpoint.office.name,
   };
+}
+
+export async function createCheckpoint(input: CreateCheckpointInput): Promise<CreateCheckpointResult> {
+  const name = input.name.trim();
+  if (name.length < 2 || name.length > 80) {
+    throw new AppError(400, "VALIDATION_ERROR", "Checkpoint name must be between 2 and 80 characters.", false);
+  }
+  const days = input.expiresInDays ?? DEFAULT_QR_EXPIRY_DAYS;
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    throw new AppError(400, "INVALID_EXPIRY", "QR expiry lifetime must be between 1 and 365 days.", false);
+  }
+  const expiresAtUtc = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+  return prisma.$transaction(async (tx) => {
+    const office = input.officeId
+      ? await tx.office.findUnique({ where: { id: input.officeId } })
+      : await tx.office.findFirst({ orderBy: { createdAt: "asc" } });
+    if (!office) {
+      throw new AppError(404, "OFFICE_NOT_FOUND", "Office not found.", false);
+    }
+
+    const created = await tx.qrCheckpoint.create({
+      data: {
+        officeId: office.id,
+        name,
+        action: input.action,
+        active: true,
+        credentialVersion: 1,
+        credentialExpiresAtUtc: expiresAtUtc,
+      },
+    });
+
+    const expiresIso = officeDateIso(expiresAtUtc, office.timezone);
+    await recordAuditEvent(tx, {
+      actorId: input.actorId,
+      action: "checkpoint.created",
+      resourceType: "qr_checkpoint",
+      resourceId: created.id,
+      afterValues: {
+        name: created.name,
+        action: created.action,
+        credentialVersion: created.credentialVersion,
+        expiresIso,
+        summary: `Added ${created.name} (${created.action === "TIME_IN" ? "IN" : "OUT"}) checkpoint`,
+      },
+      correlationId: input.correlationId,
+    });
+
+    return {
+      id: created.id,
+      name: created.name,
+      action: created.action === "TIME_IN" ? "IN" : "OUT",
+      codeVersion: created.credentialVersion,
+      expiresIso,
+    };
+  });
+}
+
+export async function revokeCheckpoint(input: RevokeCheckpointInput): Promise<RevokeCheckpointResult> {
+  return prisma.$transaction(async (tx) => {
+    const checkpoint = await tx.qrCheckpoint.findUnique({
+      where: { id: input.checkpointId },
+      include: { office: true },
+    });
+    if (!checkpoint) {
+      throw new AppError(404, "CHECKPOINT_NOT_FOUND", "QR checkpoint not found.", false);
+    }
+    if (!checkpoint.active) {
+      throw new AppError(409, "ALREADY_REVOKED", "This QR checkpoint is already revoked.", false);
+    }
+
+    const revokedAt = new Date();
+    const updated = await tx.qrCheckpoint.update({
+      where: { id: checkpoint.id },
+      data: {
+        active: false,
+        revokedAtUtc: revokedAt,
+        credentialVersion: { increment: 1 },
+      },
+    });
+
+    const revokedIso = officeDateIso(revokedAt, checkpoint.office.timezone);
+    await recordAuditEvent(tx, {
+      actorId: input.actorId,
+      action: "checkpoint.revoked",
+      resourceType: "qr_checkpoint",
+      resourceId: updated.id,
+      beforeValues: { active: true, credentialVersion: checkpoint.credentialVersion },
+      afterValues: {
+        active: false,
+        credentialVersion: updated.credentialVersion,
+        revokedIso,
+        summary: `Permanently revoked ${updated.name} (${updated.action === "TIME_IN" ? "IN" : "OUT"})`,
+      },
+      correlationId: input.correlationId,
+    });
+
+    return { id: updated.id, revokedIso };
+  });
 }

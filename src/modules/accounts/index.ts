@@ -25,6 +25,8 @@ import type { StatusKind } from "@/lib/ui/status";
 import type {
   DepartmentRowVM,
   HistoryDayVM,
+  HrTeamVM,
+  HrUserRowVM,
   InternAccountTab,
   InternListRowVM,
   InternListVM,
@@ -1130,5 +1132,277 @@ export async function setDepartmentActive(input: {
       correlationId: input.correlationId,
     });
     return { active: updated.active };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// HR team management
+// ---------------------------------------------------------------------------
+
+export async function listHrUsers(currentActorId?: string): Promise<HrTeamVM> {
+  const [office, users] = await Promise.all([
+    prisma.office.findFirst({ select: { timezone: true }, orderBy: { createdAt: "asc" } }),
+    prisma.user.findMany({
+      where: { role: "HR" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+        setupLinkSentAtUtc: true,
+        lastSignInAtUtc: true,
+      },
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+    }),
+  ]);
+  const timeZone = office?.timezone ?? "Asia/Manila";
+  const todayIso = officeDateIso(new Date(), timeZone);
+
+  const rows: HrUserRowVM[] = users.map((u) => {
+    let lastSignInLabel: string | undefined;
+    if (u.lastSignInAtUtc) {
+      const signInIso = officeDateIso(u.lastSignInAtUtc, timeZone);
+      const clock = formatClock(u.lastSignInAtUtc, timeZone);
+      lastSignInLabel = signInIso === todayIso ? `Today, ${clock}` : `${formatShortDate(signInIso)}, ${clock}`;
+    }
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      status: u.status,
+      isCurrentUser: u.id === currentActorId,
+      setupLinkSentIso: u.setupLinkSentAtUtc ? officeDateIso(u.setupLinkSentAtUtc, timeZone) : undefined,
+      lastSignInLabel,
+    };
+  });
+
+  return { users: rows };
+}
+
+export async function inviteHrUser(input: {
+  readonly actorId: string;
+  readonly name: string;
+  readonly email: string;
+  readonly correlationId: string;
+}): Promise<{
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
+  readonly status: "PENDING";
+  readonly setupLinkSentIso: string;
+}> {
+  const trimmedName = input.name.trim();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  if (trimmedName.length < 2 || trimmedName.length > 100 || !normalizedEmail.includes("@")) {
+    throw new AppError(400, "VALIDATION_ERROR", "Valid name and email are required.", false);
+  }
+
+  const rawToken = createRawSetupToken();
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + SETUP_TOKEN_TTL_MS);
+
+  const txResult = await prisma.$transaction(async (tx) => {
+    const existing = await tx.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
+      throw new AppError(409, "EMAIL_TAKEN", "That email already has an account.", false);
+    }
+
+    const office = await tx.office.findFirst({ select: { timezone: true }, orderBy: { createdAt: "asc" } });
+    const timeZone = office?.timezone ?? "Asia/Manila";
+    const now = new Date();
+
+    const created = await tx.user.create({
+      data: {
+        email: normalizedEmail,
+        name: trimmedName,
+        role: "HR",
+        status: "PENDING",
+        emailVerified: false,
+        setupLinkSentAtUtc: now,
+      },
+    });
+
+    await tx.verification.create({
+      data: {
+        identifier: setupIdentifier(created.id),
+        value: tokenHash,
+        expiresAt,
+      },
+    });
+
+    await recordAuditEvent(tx, {
+      actorId: input.actorId,
+      action: "hr_user.invited",
+      resourceType: "user",
+      resourceId: created.id,
+      afterValues: {
+        role: "HR",
+        status: "PENDING",
+        summary: `Invited HR user ${created.name}`,
+      },
+      correlationId: input.correlationId,
+    });
+
+    return {
+      id: created.id,
+      name: created.name,
+      email: created.email,
+      timeZone,
+      setupLinkSentIso: officeDateIso(now, timeZone),
+    };
+  });
+
+  const setupUrl = buildAppUrl(`/set-password?token=${encodeURIComponent(rawToken)}`);
+  await sendSetupLinkEmail({
+    to: txResult.email,
+    firstName: txResult.name.split(/\s+/)[0] || txResult.name,
+    role: "HR",
+    setupUrl,
+    expiresLabel: formatExpiryLabel(expiresAt, txResult.timeZone),
+  }).catch(() => undefined);
+
+  return {
+    id: txResult.id,
+    name: txResult.name,
+    email: txResult.email,
+    status: "PENDING",
+    setupLinkSentIso: txResult.setupLinkSentIso,
+  };
+}
+
+export async function resendHrSetupLink(input: {
+  readonly actorId: string;
+  readonly targetUserId: string;
+  readonly correlationId: string;
+}): Promise<{ readonly sentAtUtc: string }> {
+  const rawToken = createRawSetupToken();
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + SETUP_TOKEN_TTL_MS);
+
+  const txResult = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({ where: { id: input.targetUserId } });
+    if (!user || user.role !== "HR") {
+      throw new AppError(404, "HR_USER_NOT_FOUND", "HR user not found.", false);
+    }
+    if (user.status === "DISABLED") {
+      throw new AppError(409, "ACCOUNT_DISABLED", "Reactivate this HR account before sending a setup link.", false);
+    }
+
+    const office = await tx.office.findFirst({ select: { timezone: true }, orderBy: { createdAt: "asc" } });
+    const timeZone = office?.timezone ?? "Asia/Manila";
+    const now = new Date();
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: { setupLinkSentAtUtc: now },
+    });
+    await tx.verification.deleteMany({ where: { identifier: setupIdentifier(user.id) } });
+    await tx.verification.create({
+      data: {
+        identifier: setupIdentifier(user.id),
+        value: tokenHash,
+        expiresAt,
+      },
+    });
+
+    await recordAuditEvent(tx, {
+      actorId: input.actorId,
+      action: "hr_user.setup_link_resent",
+      resourceType: "user",
+      resourceId: user.id,
+      afterValues: { summary: `Resent setup link to HR user ${user.name}` },
+      correlationId: input.correlationId,
+    });
+
+    return { email: user.email, name: user.name, timeZone, sentAtUtc: now.toISOString() };
+  });
+
+  const setupUrl = buildAppUrl(`/set-password?token=${encodeURIComponent(rawToken)}`);
+  await sendSetupLinkEmail({
+    to: txResult.email,
+    firstName: txResult.name.split(/\s+/)[0] || txResult.name,
+    role: "HR",
+    setupUrl,
+    expiresLabel: formatExpiryLabel(expiresAt, txResult.timeZone),
+  }).catch(() => undefined);
+
+  return { sentAtUtc: txResult.sentAtUtc };
+}
+
+export async function revokeHrSessions(input: {
+  readonly actorId: string;
+  readonly targetUserId: string;
+  readonly correlationId: string;
+}): Promise<{ readonly sessionsEnded: number }> {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({ where: { id: input.targetUserId } });
+    if (!user || user.role !== "HR") {
+      throw new AppError(404, "HR_USER_NOT_FOUND", "HR user not found.", false);
+    }
+
+    const deleted = await tx.session.deleteMany({ where: { userId: user.id } });
+    await recordAuditEvent(tx, {
+      actorId: input.actorId,
+      action: "hr_user.sessions_revoked",
+      resourceType: "user",
+      resourceId: user.id,
+      afterValues: {
+        sessionsEnded: deleted.count,
+        summary: `Signed HR user ${user.name} out of ${deleted.count} session(s)`,
+      },
+      correlationId: input.correlationId,
+    });
+
+    return { sessionsEnded: deleted.count };
+  });
+}
+
+export async function setHrUserStatus(input: {
+  readonly actorId: string;
+  readonly targetUserId: string;
+  readonly status: "ACTIVE" | "DISABLED";
+  readonly correlationId: string;
+}): Promise<{ readonly status: "ACTIVE" | "DISABLED" }> {
+  return prisma.$transaction(async (tx) => {
+    const target = await tx.user.findUnique({ where: { id: input.targetUserId } });
+    if (!target || target.role !== "HR") {
+      throw new AppError(404, "HR_USER_NOT_FOUND", "HR user not found.", false);
+    }
+
+    if (input.status === "DISABLED") {
+      if (target.id === input.actorId) {
+        throw new AppError(409, "CANNOT_DISABLE_SELF", "You cannot disable your own HR account.", false);
+      }
+      const otherActiveCount = await tx.user.count({
+        where: { role: "HR", status: "ACTIVE", id: { not: target.id } },
+      });
+      if (otherActiveCount === 0) {
+        throw new AppError(409, "LAST_ACTIVE_HR", "At least one active HR account must remain.", false);
+      }
+    }
+
+    const updated = await tx.user.update({
+      where: { id: target.id },
+      data: { status: input.status },
+    });
+
+    if (input.status === "DISABLED") {
+      await tx.session.deleteMany({ where: { userId: target.id } });
+    }
+
+    await recordAuditEvent(tx, {
+      actorId: input.actorId,
+      action: "hr_user.status_changed",
+      resourceType: "user",
+      resourceId: target.id,
+      beforeValues: { status: target.status },
+      afterValues: {
+        status: updated.status,
+        summary: `${input.status === "DISABLED" ? "Disabled" : "Reactivated"} HR account ${target.name}`,
+      },
+      correlationId: input.correlationId,
+    });
+
+    return { status: input.status };
   });
 }

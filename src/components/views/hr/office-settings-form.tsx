@@ -159,86 +159,91 @@ export function OfficeSettingsForm({ office, mock }: { office: OfficeSetupVM["of
           ))}
         </div>
       </div>
-      <div className="grid gap-3 border-t border-hairline px-5 py-4 sm:grid-cols-3">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="office-latitude" className="text-xs font-semibold leading-4 text-muted-foreground">
-            Pin latitude
-          </label>
-          <input
-            id="office-latitude"
-            type="number"
-            step="0.000001"
-            placeholder={office.pinLabel.split(",")[0]?.trim() || "14.554700"}
-            value={latitude}
-            onChange={(event) => {
-              setLatitude(event.target.value);
-              setState({ kind: "idle" });
-            }}
-            aria-invalid={errors.latitude ? true : undefined}
-            aria-describedby={errors.latitude ? "office-latitude-error" : undefined}
-            className={WIDE_INPUT}
-          />
-          {errors.latitude ? (
-            <p id="office-latitude-error" className="text-xs font-medium text-attn">
-              {errors.latitude}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="office-longitude" className="text-xs font-semibold leading-4 text-muted-foreground">
-            Pin longitude
-          </label>
-          <input
-            id="office-longitude"
-            type="number"
-            step="0.000001"
-            placeholder={office.pinLabel.split(",")[1]?.trim() || "121.024400"}
-            value={longitude}
-            onChange={(event) => {
-              setLongitude(event.target.value);
-              setState({ kind: "idle" });
-            }}
-            aria-invalid={errors.longitude ? true : undefined}
-            aria-describedby={errors.longitude ? "office-longitude-error" : undefined}
-            className={WIDE_INPUT}
-          />
-          {errors.longitude ? (
-            <p id="office-longitude-error" className="text-xs font-medium text-attn">
-              {errors.longitude}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="office-timezone" className="text-xs font-semibold leading-4 text-muted-foreground">
-            Time zone
-          </label>
-          <input
-            id="office-timezone"
-            type="text"
-            value={timezone}
-            onChange={(event) => {
-              setTimezone(event.target.value);
-              setState({ kind: "idle" });
-            }}
-            aria-invalid={errors.timezone ? true : undefined}
-            aria-describedby={errors.timezone ? "office-timezone-error" : undefined}
-            className={WIDE_INPUT}
-          />
-          {errors.timezone ? (
-            <p id="office-timezone-error" className="text-xs font-medium text-attn">
-              {errors.timezone}
-            </p>
-          ) : null}
-        </div>
-      </div>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 border-t border-hairline px-5 py-3 text-[13px] leading-[18px]">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 border-t border-hairline px-5 py-4 text-[13px] leading-[18px]">
         <dt className="text-muted-foreground">Office</dt>
         <dd>{office.name}</dd>
         <dt className="text-muted-foreground">Pin</dt>
         <dd className="font-mono">{office.pinLabel}</dd>
-        <dt className="text-muted-foreground">Settings</dt>
-        <dd className="font-mono">v{configVersion}</dd>
+        <dt className="text-muted-foreground">Time zone</dt>
+        <dd>{timezone}</dd>
       </dl>
+      <details className="border-t border-hairline px-5 py-3">
+        <summary className="cursor-pointer select-none text-xs font-semibold text-primary hover:underline">
+          Edit pin coordinates and time zone
+        </summary>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="office-latitude" className="text-xs font-semibold leading-4 text-muted-foreground">
+              Pin latitude
+            </label>
+            <input
+              id="office-latitude"
+              type="number"
+              step="0.000001"
+              placeholder="14.554700"
+              value={latitude}
+              onChange={(event) => {
+                setLatitude(event.target.value);
+                setState({ kind: "idle" });
+              }}
+              aria-invalid={errors.latitude ? true : undefined}
+              aria-describedby={errors.latitude ? "office-latitude-error" : undefined}
+              className={WIDE_INPUT}
+            />
+            {errors.latitude ? (
+              <p id="office-latitude-error" className="text-xs font-medium text-attn">
+                {errors.latitude}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="office-longitude" className="text-xs font-semibold leading-4 text-muted-foreground">
+              Pin longitude
+            </label>
+            <input
+              id="office-longitude"
+              type="number"
+              step="0.000001"
+              placeholder="121.024400"
+              value={longitude}
+              onChange={(event) => {
+                setLongitude(event.target.value);
+                setState({ kind: "idle" });
+              }}
+              aria-invalid={errors.longitude ? true : undefined}
+              aria-describedby={errors.longitude ? "office-longitude-error" : undefined}
+              className={WIDE_INPUT}
+            />
+            {errors.longitude ? (
+              <p id="office-longitude-error" className="text-xs font-medium text-attn">
+                {errors.longitude}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="office-timezone" className="text-xs font-semibold leading-4 text-muted-foreground">
+              Time zone
+            </label>
+            <input
+              id="office-timezone"
+              type="text"
+              value={timezone}
+              onChange={(event) => {
+                setTimezone(event.target.value);
+                setState({ kind: "idle" });
+              }}
+              aria-invalid={errors.timezone ? true : undefined}
+              aria-describedby={errors.timezone ? "office-timezone-error" : undefined}
+              className={WIDE_INPUT}
+            />
+            {errors.timezone ? (
+              <p id="office-timezone-error" className="text-xs font-medium text-attn">
+                {errors.timezone}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </details>
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-hairline px-5 py-4">
         <p className="min-w-0 flex-1 basis-56 text-xs leading-[18px] text-muted-foreground">
           A scan counts only when the whole accuracy circle sits inside the radius.

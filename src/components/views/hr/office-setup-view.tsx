@@ -4,6 +4,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusMark } from "@/components/ui/status-mark";
+import { AddCheckpointDialog } from "@/components/views/hr/add-checkpoint-dialog";
 import { CheckpointActions } from "@/components/views/hr/checkpoint-actions";
 import { OfficeSettingsForm } from "@/components/views/hr/office-settings-form";
 import { ExampleValuesBanner, versionRange } from "@/components/views/hr/setup-shared";
@@ -92,6 +93,7 @@ export function OfficeSetupView({ data, mock }: { data: OfficeSetupVM; mock: boo
           id="qr-title"
           title="QR checkpoints"
           description="Printed codes at the entrance. Each holds a signed checkpoint reference, never intern details."
+          action={<AddCheckpointDialog officeId={data.office.id} mock={mock} />}
         />
         <div className="relative overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse">

@@ -445,6 +445,7 @@ export interface AttendanceVM {
   timeZone?: string;
   from?: string;
   to?: string;
+  hasCustomRange?: boolean;
   todayIso: string;
   nowClock: string;
   schedule: { start: string; end: string };
@@ -552,6 +553,20 @@ export interface DepartmentRowVM {
   finished: number;
   status: StatusKind;
   inactiveSinceIso?: string;
+}
+
+export interface HrUserRowVM {
+  id: string;
+  name: string;
+  email: string;
+  status: UserStatus;
+  isCurrentUser: boolean;
+  setupLinkSentIso?: string;
+  lastSignInLabel?: string;
+}
+
+export interface HrTeamVM {
+  users: HrUserRowVM[];
 }
 
 export type AuditCategory = "office" | "qr" | "policy" | "accounts" | "corrections" | "attendance";

@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Open_Sans, Oswald } from "next/font/google";
 
+import { MockModeProvider } from "@/components/shell/dev-mode-banner";
+import { getMockModeReason, isMockModeEnabled } from "@/lib/auth/session";
+
 import "./globals.css";
 
 const openSans = Open_Sans({
@@ -43,9 +46,15 @@ export const viewport: Viewport = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const mock = isMockModeEnabled();
+  const reason = getMockModeReason();
   return (
     <html lang="en" className={`${openSans.variable} ${oswald.variable}`}>
-      <body>{children}</body>
+      <body>
+        <MockModeProvider mock={mock} reason={reason}>
+          {children}
+        </MockModeProvider>
+      </body>
     </html>
   );
 }

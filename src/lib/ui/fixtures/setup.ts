@@ -11,7 +11,7 @@
  */
 
 import type { PolicyRules } from "@/lib/ui/policy";
-import type { AuditEntryVM, CheckpointVM, DepartmentRowVM, PolicyVersionVM } from "@/lib/ui/view-models";
+import type { AuditEntryVM, CheckpointVM, DepartmentRowVM, HrUserRowVM, PolicyVersionVM } from "@/lib/ui/view-models";
 
 const V2_RULES: PolicyRules = {
   workdays: [1, 2, 3, 4, 5],
@@ -238,3 +238,30 @@ export const AUDIT_ENTRIES: AuditEntryVM[] = [
 
 /** Entries in the last 60 days; the sample rows are the newest page. */
 export const AUDIT_TOTAL = 186;
+
+export const HR_TEAM_ROWS: HrUserRowVM[] = [
+  {
+    id: "hr-admin-1",
+    name: "[HR NAME]",
+    email: "hr@toprealty.ph",
+    status: "ACTIVE",
+    isCurrentUser: true,
+    lastSignInLabel: "Today, 08:42",
+  },
+  {
+    id: "hr-admin-2",
+    name: "Clarisse Villanueva",
+    email: "clarisse.villanueva@toprealty.ph",
+    status: "PENDING",
+    isCurrentUser: false,
+    setupLinkSentIso: "2026-10-18",
+  },
+  {
+    id: "hr-admin-3",
+    name: "Ramon Cruz",
+    email: "ramon.cruz@toprealty.ph",
+    status: "DISABLED",
+    isCurrentUser: false,
+    lastSignInLabel: "Sep 14, 17:10",
+  },
+];

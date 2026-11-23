@@ -251,7 +251,7 @@ function SessionPanel({ detail, data, mock }: { detail: SessionDetailVM; data: A
 }
 
 export function AttendanceView({ data, mock }: { data: AttendanceVM; mock: boolean }) {
-  const filtered = Boolean(data.query || data.department || data.status !== "all" || data.from || data.to);
+  const filtered = Boolean(data.query || data.department || data.status !== "all" || data.hasCustomRange);
 
   return (
     <>

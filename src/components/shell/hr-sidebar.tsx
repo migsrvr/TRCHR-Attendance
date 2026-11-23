@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   QrCode,
   Scale,
+  ShieldCheck,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -25,6 +26,7 @@ const ICONS: Record<HrNavId, LucideIcon> = {
   office: QrCode,
   policies: Scale,
   departments: Building2,
+  team: ShieldCheck,
   audit: History,
 };
 

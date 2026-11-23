@@ -4,7 +4,7 @@
  * falls back to fixtures only when USE_MOCK_APIS=1 or in unit tests.
  */
 
-import { requirePageIntern } from "@/lib/auth/session";
+import { isMockModeEnabled, requirePageIntern } from "@/lib/auth/session";
 import type { RecordedDay } from "@/lib/ui/correction-form";
 import {
   ANA,
@@ -43,12 +43,12 @@ export interface ScanContext {
 
 const OFFICE_TIME_ZONE = "Asia/Manila";
 
-function useFixtures(): boolean {
-  return process.env.USE_MOCK_APIS === "1" || process.env.NODE_ENV === "test";
+function shouldUseFixtures(): boolean {
+  return isMockModeEnabled();
 }
 
 export async function getScanContext(options: { openSince?: string | null } = {}): Promise<ScanContext> {
-  if (useFixtures()) {
+  if (shouldUseFixtures()) {
     return {
       internName: ANA.name,
       initials: ANA.initials,
@@ -63,7 +63,7 @@ export async function getScanContext(options: { openSince?: string | null } = {}
 }
 
 export async function getInternHome(): Promise<InternHomeVM> {
-  if (useFixtures()) {
+  if (shouldUseFixtures()) {
     const today = OCTOBER_DAYS.find((day) => day.dateIso === SNAPSHOT_TODAY);
     const open = CORRECTIONS.find((c) => c.status === "PENDING" || c.status === "NEEDS_INFO");
     return {
@@ -91,7 +91,7 @@ export async function getInternHome(): Promise<InternHomeVM> {
 }
 
 export async function getInternHistory(monthIso?: string): Promise<InternHistoryVM> {
-  if (useFixtures()) {
+  if (shouldUseFixtures()) {
     const targetMonth = monthIso ?? "2026-10";
     const days = OCTOBER_DAYS.filter((day) => day.dateIso.startsWith(`${targetMonth}-`)).reverse();
     return {
@@ -126,7 +126,7 @@ function toSummary(detail: CorrectionDetailVM): CorrectionSummaryVM {
 }
 
 export async function getInternCorrections(): Promise<InternCorrectionsVM> {
-  if (useFixtures()) {
+  if (shouldUseFixtures()) {
     const isOpen = (status: string) => status === "PENDING" || status === "NEEDS_INFO";
     return {
       identity: ANA,
@@ -139,7 +139,7 @@ export async function getInternCorrections(): Promise<InternCorrectionsVM> {
 }
 
 export async function getCorrectionDetail(id: string): Promise<CorrectionDetailVM | null> {
-  if (useFixtures()) {
+  if (shouldUseFixtures()) {
     return CORRECTIONS.find((c) => c.id === id) ?? null;
   }
   const actor = (await requirePageIntern(`/corrections/${id}`))!;
@@ -147,7 +147,7 @@ export async function getCorrectionDetail(id: string): Promise<CorrectionDetailV
 }
 
 export async function getNewCorrection(dateIso?: string, replaceRequestId?: string): Promise<NewCorrectionVM> {
-  if (useFixtures()) {
+  if (shouldUseFixtures()) {
     const recordedByDate: Record<string, RecordedDay> = { ...RECORDED_EXTRA };
     for (const day of OCTOBER_DAYS) {
       const first = day.sessions[0];

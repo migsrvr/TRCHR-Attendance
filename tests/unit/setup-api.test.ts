@@ -10,9 +10,22 @@ describe("setup API", () => {
     expect((await api.addDepartment("Property Management")).ok).toBe(false);
   });
 
-  it("maps locked versions and permissions to plain messages", () => {
+  it("maps locked versions, revoked checkpoints, and permissions to plain messages", () => {
     expect(setupErrorMessage(409, { error: { code: "VERSION_LOCKED" } })).toMatch(/locked/);
+    expect(setupErrorMessage(409, { error: { code: "ALREADY_REVOKED" } })).toMatch(/revoked/i);
     expect(setupErrorMessage(403, null)).toMatch(/Only HR/);
     expect(setupErrorMessage(500, null)).toMatch(/connection/);
+  });
+
+  it("creates and revokes checkpoints in mock mode", async () => {
+    const api = createMockSetupApi({ delayMs: 0 });
+    const created = await api.createCheckpoint({ name: "3rd floor reception", action: "TIME_IN", expiresInDays: 90 });
+    expect(created.ok).toBe(true);
+    if (created.ok) {
+      expect(created.value.action).toBe("IN");
+      expect(created.value.codeVersion).toBe(1);
+      const revoked = await api.revokeCheckpoint(created.value.id);
+      expect(revoked.ok).toBe(true);
+    }
   });
 });

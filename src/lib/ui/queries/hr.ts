@@ -4,7 +4,7 @@
  * fixtures only when USE_MOCK_APIS=1 or inside unit tests.
  */
 
-import { requirePageHr } from "@/lib/auth/session";
+import { isMockModeEnabled, requirePageHr } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { hrReasonLabel } from "@/lib/ui/correction-form";
 import { datesBetween, defaultPeriod, dtrSearch, formatRange, isWeekend, parseDtrScope, workdaysBetween } from "@/lib/ui/dtr";
@@ -32,6 +32,7 @@ import {
   CHECKPOINTS,
   DEPARTMENT_ROWS,
   DEV_PRINT_TOKENS,
+  HR_TEAM_ROWS,
   OFFICE,
   POLICY_EXAMPLE,
   POLICY_VERSIONS,
@@ -54,6 +55,7 @@ import type {
   DtrPageVM,
   HrOverviewVM,
   HrShellVM,
+  HrTeamVM,
   InternAccountTab,
   InternListVM,
   InternProfileVM,
@@ -68,6 +70,7 @@ import type {
 import {
   getInternProfile as liveGetInternProfile,
   listDepartments as liveListDepartments,
+  listHrUsers as liveListHrUsers,
   listInterns as liveListInterns,
 } from "@/modules/accounts";
 import {
@@ -89,8 +92,8 @@ import { buildDtrPage as liveBuildDtrPage } from "@/modules/reports";
 
 const HOURS_ROWS_SHOWN = 4;
 
-function useFixtures(): boolean {
-  return process.env.USE_MOCK_APIS === "1" || process.env.NODE_ENV === "test";
+function shouldUseFixtures(): boolean {
+  return isMockModeEnabled();
 }
 
 const initials = (name: string) =>
@@ -103,7 +106,7 @@ const initials = (name: string) =>
 
 /** The frame every HR page shares. */
 export async function getHrShell(): Promise<HrShellVM> {
-  if (useFixtures()) {
+  if (shouldUseFixtures()) {
     return { identity: HR_IDENTITY, reviewCount: NEEDS_YOU.length, officeLabel: OFFICE_LABEL };
   }
   const actor = (await requirePageHr("/hr"))!;
@@ -123,7 +126,7 @@ export async function getHrShell(): Promise<HrShellVM> {
 }
 
 export async function getHrOverview(): Promise<HrOverviewVM> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveGetHrTodayOverview();
   }
   const byPace = [...HOURS_ROWS].sort((a, b) => a.paceDeltaMinutes - b.paceDeltaMinutes);
@@ -156,7 +159,7 @@ export async function getInternList(filters: {
   department?: string | null;
   page?: number;
 }): Promise<InternListVM> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveListInterns(filters);
   }
   const tab = filters.tab && TABS.includes(filters.tab) ? filters.tab : "all";
@@ -198,7 +201,7 @@ function hrCorrectionStatus(id: string, value: (typeof CORRECTIONS)[number]["sta
 }
 
 export async function getInternProfile(id: string): Promise<InternProfileVM | null> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveGetInternProfile(id);
   }
   const row = INTERN_ROWS.find((candidate) => candidate.id === id);
@@ -276,7 +279,7 @@ export async function getReviewQueue(filters: {
   from?: string;
   to?: string;
 }): Promise<ReviewQueueVM> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveListForReview(filters);
   }
   const tab = filters.tab && REVIEW_TABS.includes(filters.tab) ? filters.tab : "you";
@@ -302,7 +305,7 @@ export async function getReviewQueue(filters: {
 }
 
 export async function getReviewDetail(id: string): Promise<ReviewDetailVM | null> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveGetCorrectionForReview(id);
   }
   return REVIEW_DETAILS[id] ?? null;
@@ -358,7 +361,7 @@ export async function getAttendance(filters: {
   from?: string;
   to?: string;
 }): Promise<AttendanceVM> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveListSessionsByDay(filters);
   }
   const query = (filters.query ?? "").trim();
@@ -388,6 +391,9 @@ export async function getAttendance(filters: {
     department,
     status,
     periodLabel: ATTENDANCE_PERIOD_LABEL,
+    from: filters.from,
+    to: filters.to,
+    hasCustomRange: Boolean(filters.from || filters.to),
     todayIso: SNAPSHOT_TODAY,
     nowClock: SNAPSHOT_NOW,
     schedule: SCHEDULE,
@@ -424,7 +430,7 @@ function dtrDays(internId: string, from: string, to: string): DtrDayVM[] {
 }
 
 export async function getDtrReport(params: Record<string, string | undefined>): Promise<DtrPageVM> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveBuildDtrPage(params);
   }
   const normalizedParams = { ...params, subject: params.subject ?? params.intern };
@@ -508,7 +514,7 @@ export async function getDtrReport(params: Record<string, string | undefined>): 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export async function getOfficeSetup(): Promise<OfficeSetupVM> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveGetOfficeSetup();
   }
   return {
@@ -520,7 +526,7 @@ export async function getOfficeSetup(): Promise<OfficeSetupVM> {
 }
 
 export async function getPolicies(version?: number): Promise<PoliciesVM> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveListPolicyVersions(version);
   }
   const fallback = POLICY_VERSIONS.find((candidate) => candidate.state === "DRAFT") ?? POLICY_VERSIONS[0]!;
@@ -534,10 +540,18 @@ export async function getPolicies(version?: number): Promise<PoliciesVM> {
 }
 
 export async function getDepartments(): Promise<DepartmentRowVM[]> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveListDepartments();
   }
   return DEPARTMENT_ROWS;
+}
+
+export async function getHrTeam(): Promise<HrTeamVM> {
+  if (shouldUseFixtures()) {
+    return { users: HR_TEAM_ROWS };
+  }
+  const actor = (await requirePageHr("/hr/setup/team"))!;
+  return liveListHrUsers(actor.userId);
 }
 
 const AUDIT_CATEGORIES: AuditCategory[] = ["office", "qr", "policy", "accounts", "corrections", "attendance"];
@@ -549,7 +563,7 @@ export async function getAuditLog(filters: {
   from?: string;
   to?: string;
 }): Promise<AuditLogVM> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveListAuditEntries(filters);
   }
   const query = (filters.query ?? "").trim();
@@ -578,7 +592,7 @@ export async function getAuditLog(filters: {
 }
 
 export async function getCheckpointPrint(id: string): Promise<{ checkpoint: CheckpointVM; token: string; officeName: string } | null> {
-  if (!useFixtures()) {
+  if (!shouldUseFixtures()) {
     return liveIssueCheckpointToken(id);
   }
   const checkpoint = CHECKPOINTS.find((candidate) => candidate.id === id);

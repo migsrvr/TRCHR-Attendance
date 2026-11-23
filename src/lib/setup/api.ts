@@ -17,9 +17,26 @@ export interface SaveOfficeInput {
   timezone?: string;
 }
 
+export interface CreateCheckpointInput {
+  officeId?: string;
+  name: string;
+  action: "TIME_IN" | "TIME_OUT";
+  expiresInDays?: number;
+}
+
+export interface CreatedCheckpoint {
+  id: string;
+  name: string;
+  action: "IN" | "OUT";
+  codeVersion: number;
+  expiresIso: string;
+}
+
 export interface SetupApi {
   saveOffice(input: SaveOfficeInput): Promise<ApiResult<{ settingsVersion: number }>>;
+  createCheckpoint(input: CreateCheckpointInput): Promise<ApiResult<CreatedCheckpoint>>;
   rotateCheckpoint(checkpointId: string, options?: { expiresInDays?: number }): Promise<ApiResult<{ codeVersion: number }>>;
+  revokeCheckpoint(checkpointId: string): Promise<ApiResult<{ id: string; revokedIso: string }>>;
   createPolicyDraft(officeId?: string, fromVersion?: number): Promise<ApiResult<{ version: number }>>;
   savePolicyDraft(input: {
     officeId?: string;
@@ -40,6 +57,8 @@ const MESSAGES: Record<string, string> = {
   VERSION_LOCKED: "That version is in use, so it's locked. Start a new draft instead.",
   START_IN_PAST: "A new version can't start before tomorrow. Pick a later date.",
   STALE_VERSION: "Settings were updated by someone else. Refresh the page and try again.",
+  ALREADY_REVOKED: "That checkpoint is already revoked.",
+  CHECKPOINT_REVOKED: "That checkpoint is revoked and can't be rotated.",
   FORBIDDEN: "Only HR can change setup. Sign in with an HR account.",
 };
 
@@ -70,8 +89,11 @@ export function createHttpSetupApi(base = "/api/v1/hr"): SetupApi {
   return {
     saveOffice: ({ officeId = "default", ...payload }) =>
       send(`${base}/offices/${encodeURIComponent(officeId)}`, payload, "PATCH"),
+    createCheckpoint: (input) => send(`${base}/checkpoints`, input, "POST"),
     rotateCheckpoint: (id, options = {}) =>
       send(`${base}/checkpoints/${encodeURIComponent(id)}/rotate`, options, "POST"),
+    revokeCheckpoint: (id) =>
+      send(`${base}/checkpoints/${encodeURIComponent(id)}/revoke`, {}, "POST"),
     createPolicyDraft: (officeId = "default", fromVersion) =>
       send(`${base}/offices/${encodeURIComponent(officeId)}/policies`, fromVersion ? { fromVersion } : {}, "POST"),
     savePolicyDraft: ({ officeId = "default", version, fromIso, rules }) =>
@@ -96,9 +118,30 @@ export function createMockSetupApi(options: { delayMs?: number; existingNames?: 
       await wait();
       return { ok: true, value: { settingsVersion: 4 } };
     },
+    async createCheckpoint(input) {
+      await wait();
+      const days = input.expiresInDays ?? 90;
+      const expiresIso = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const slug = input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const action = input.action === "TIME_IN" ? "IN" : "OUT";
+      return {
+        ok: true,
+        value: {
+          id: `chk-${slug}-${action.toLowerCase()}-v1`,
+          name: input.name.trim(),
+          action,
+          codeVersion: 1,
+          expiresIso,
+        },
+      };
+    },
     async rotateCheckpoint() {
       await wait();
       return { ok: true, value: { codeVersion: 3 } };
+    },
+    async revokeCheckpoint(id) {
+      await wait();
+      return { ok: true, value: { id, revokedIso: new Date().toISOString().slice(0, 10) } };
     },
     async createPolicyDraft(_officeId, fromVersion) {
       await wait();

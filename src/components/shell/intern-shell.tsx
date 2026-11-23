@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { DevModeBanner } from "@/components/shell/dev-mode-banner";
 import type { InternTabId } from "@/components/shell/nav";
 import { InternTabBar } from "@/components/shell/intern-tabbar";
 import { SignOutButton } from "@/components/shell/sign-out-button";
@@ -63,6 +64,7 @@ export function InternShell({
           </div>
         )}
       </header>
+      <DevModeBanner compact />
 
       <main id="app-main" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-safe">
         {children}

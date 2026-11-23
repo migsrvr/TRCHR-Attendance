@@ -1378,6 +1378,7 @@ export async function listSessionsByDay(filters: {
     timeZone,
     from: fromIso,
     to: toIso,
+    hasCustomRange: Boolean(filters.from || filters.to),
   };
 }
 

@@ -27,10 +27,12 @@ describe("OfficeSetupView", () => {
     expect(html).toContain('href="/hr/setup/policies"');
   });
 
-  it("lists QR checkpoints with print and rotate, revoked rows muted", async () => {
+  it("lists QR checkpoints with add, print, rotate, and revoke, revoked rows muted", async () => {
     const html = renderToStaticMarkup(<OfficeSetupView data={await getOfficeSetup()} mock />);
+    expect(html).toContain("Add checkpoint");
     expect(html).toContain('href="/hr/setup/qr/chk-main-in-v2/print"');
     expect(html.match(/Rotate code/g)).toHaveLength(2);
+    expect(html.match(/>Revoke</g)).toHaveLength(2);
     expect(html).toContain("Revoked Sep 1");
     expect(html).toMatch(/data-revoked="true"[^>]*text-muted-foreground/);
     expect(html).toContain("Rotating revokes every printed copy of the old code immediately");

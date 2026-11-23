@@ -16,6 +16,7 @@ export const HR_NAV = [
   { id: "office", label: "Office and QR", href: "/hr/setup", section: "setup" },
   { id: "policies", label: "Policies", href: "/hr/setup/policies", section: "setup" },
   { id: "departments", label: "Departments", href: "/hr/setup/departments", section: "setup" },
+  { id: "team", label: "HR team", href: "/hr/setup/team", section: "setup" },
   { id: "audit", label: "Audit log", href: "/hr/audit", section: "setup" },
 ] as const;
 

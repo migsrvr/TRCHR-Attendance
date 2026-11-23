@@ -40,7 +40,17 @@ export interface ActiveInternActor extends AuthenticatedActor {
 }
 
 export function isMockModeEnabled(): boolean {
-  return process.env.USE_MOCK_APIS === "1";
+  if (process.env.USE_MOCK_APIS === "1") return true;
+  if (process.env.NODE_ENV === "test") return true;
+  if (process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL?.trim()) return true;
+  return false;
+}
+
+export function getMockModeReason(): "explicit" | "no-database" | null {
+  if (process.env.NODE_ENV === "test") return null;
+  if (process.env.USE_MOCK_APIS === "1") return "explicit";
+  if (process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL?.trim()) return "no-database";
+  return null;
 }
 
 export async function getServerActor(reqHeaders?: Headers): Promise<AuthenticatedActor | null> {

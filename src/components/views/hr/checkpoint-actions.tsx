@@ -1,6 +1,6 @@
 "use client";
 
-import { Printer, RotateCw } from "lucide-react";
+import { Ban, Printer, RotateCw } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
@@ -14,18 +14,44 @@ const EXPIRY_OPTIONS = [
   { value: "365", label: "365 days" },
 ] as const;
 
-/** Print and Rotate for an active checkpoint. Rotating is confirmed first: it revokes printed copies at once. */
+/** Print, Rotate, and permanently Revoke for an active checkpoint. */
 export function CheckpointActions({ id, label, mock }: { id: string; label: string; mock: boolean }) {
   const [api] = useState(() => (mock ? createMockSetupApi() : createHttpSetupApi()));
   const [expiresInDays, setExpiresInDays] = useState("90");
-  const [state, setState] = useState<{ kind: "idle" | "rotating" } | { kind: "rotated"; version: number } | { kind: "error"; message: string }>({ kind: "idle" });
+  const [state, setState] = useState<
+    | { kind: "idle" | "rotating" | "revoking" }
+    | { kind: "rotated"; version: number }
+    | { kind: "revoked"; revokedIso: string }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
   const confirmRef = useRef<HTMLDialogElement>(null);
+  const revokeRef = useRef<HTMLDialogElement>(null);
 
   async function rotate() {
     setState({ kind: "rotating" });
     const result = await api.rotateCheckpoint(id, { expiresInDays: Number(expiresInDays) });
     confirmRef.current?.close();
     setState(result.ok ? { kind: "rotated", version: result.value.codeVersion } : { kind: "error", message: result.message });
+  }
+
+  async function revoke() {
+    setState({ kind: "revoking" });
+    const result = await api.revokeCheckpoint(id);
+    revokeRef.current?.close();
+    if (result.ok) {
+      setState({ kind: "revoked", revokedIso: result.value.revokedIso });
+      if (!mock) window.location.reload();
+    } else {
+      setState({ kind: "error", message: result.message });
+    }
+  }
+
+  if (state.kind === "revoked") {
+    return (
+      <span role="status" className="text-xs font-medium text-muted-foreground">
+        Revoked {state.revokedIso}. Printed copies no longer scan.
+      </span>
+    );
   }
 
   return (
@@ -39,10 +65,21 @@ export function CheckpointActions({ id, label, mock }: { id: string; label: stri
           v{state.version} issued. Print and post it now.
         </span>
       ) : (
-        <Button variant="ghost" size="sm" onClick={() => confirmRef.current?.showModal()}>
-          <RotateCw aria-hidden="true" />
-          Rotate code
-        </Button>
+        <>
+          <Button variant="ghost" size="sm" onClick={() => confirmRef.current?.showModal()}>
+            <RotateCw aria-hidden="true" />
+            Rotate code
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => revokeRef.current?.showModal()}
+            className="text-secondary hover:bg-attn-bg"
+          >
+            <Ban aria-hidden="true" />
+            Revoke
+          </Button>
+        </>
       )}
       {state.kind === "error" ? (
         <span role="alert" className="text-xs text-attn">
@@ -84,6 +121,27 @@ export function CheckpointActions({ id, label, mock }: { id: string; label: stri
           </Button>
           <Button variant="secondary" onClick={rotate} aria-busy={state.kind === "rotating"}>
             {state.kind === "rotating" ? "Rotating…" : "Rotate now"}
+          </Button>
+        </div>
+      </dialog>
+      <dialog
+        ref={revokeRef}
+        aria-labelledby={`revoke-${id}-title`}
+        className="w-[calc(100%-32px)] max-w-[440px] rounded-card border border-border bg-card p-6 text-left text-foreground shadow-[0_12px_32px_rgb(var(--foreground)/0.18)] backdrop:bg-foreground/40"
+      >
+        <h2 id={`revoke-${id}-title`} className="font-heading text-lg font-bold uppercase leading-6 tracking-[0.01em]">
+          Permanently revoke {label}?
+        </h2>
+        <p className="mt-2 text-sm leading-[21px] text-muted-foreground">
+          Printed copies stop working immediately and this checkpoint cannot be reactivated. Past scans stay in attendance
+          history.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button variant="outline" onClick={() => revokeRef.current?.close()}>
+            Cancel
+          </Button>
+          <Button variant="secondary" onClick={revoke} aria-busy={state.kind === "revoking"}>
+            {state.kind === "revoking" ? "Revoking…" : "Revoke permanently"}
           </Button>
         </div>
       </dialog>
