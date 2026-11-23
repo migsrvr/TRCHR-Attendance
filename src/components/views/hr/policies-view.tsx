@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusMark } from "@/components/ui/status-mark";
 import { ExampleValuesBanner, versionRange } from "@/components/views/hr/setup-shared";
+import { NewPolicyDraftButton } from "@/components/views/hr/new-policy-draft-button";
 import { PolicyEditor } from "@/components/views/hr/policy-editor";
 import { PolicyExample } from "@/components/views/hr/policy-example";
 import { formatDuration, formatShortDate } from "@/lib/ui/format";
@@ -59,11 +60,15 @@ function LockedDetails({ version, example }: { version: PolicyVersionVM; example
 }
 
 export function PoliciesView({ data, mock }: { data: PoliciesVM; mock: boolean }) {
+  const hasDraft = data.versions.some((version) => version.state === "DRAFT");
+  const latestVersion = data.versions[0]?.version ?? 1;
+
   return (
     <>
       <PageHeader
         title="Attendance policies"
         subtitle="The rules that turn sessions into credited hours. A version locks once any attendance uses it."
+        actions={!hasDraft ? <NewPolicyDraftButton fromVersion={latestVersion} mock={mock} /> : undefined}
       />
       <ExampleValuesBanner>These numbers are placeholders until HR confirms the office&apos;s real schedule, break and rounding rules.</ExampleValuesBanner>
 

@@ -17,6 +17,8 @@ export interface CreateCorrectionRequest {
   explanation: string;
   proposedTimeIn?: string;
   proposedTimeOut?: string;
+  sessionId?: string;
+  replaceRequestId?: string;
 }
 
 export interface CreatedCorrection {
@@ -38,7 +40,6 @@ export interface CorrectionsApi {
 
 const GENERIC = "Couldn't send. Check your connection and try again.";
 
-/** Error codes the corrections routes are expected to return; proposed here, the routes must match. */
 const MESSAGES: Record<string, string> = {
   OPEN_REQUEST_EXISTS: "You already have an open request for this day. Add details to it instead.",
   REQUEST_FINALIZED: "HR has already decided this request, so it can't take replies.",
@@ -83,7 +84,7 @@ export function createHttpCorrectionsApi(base = "/api/v1"): CorrectionsApi {
   };
 }
 
-/** Development stand-in until the corrections routes exist. */
+/** Development stand-in when USE_MOCK_APIS=1. */
 export function createMockCorrectionsApi(options: { delayMs?: number; fail?: boolean } = {}): CorrectionsApi {
   const { delayMs = 700, fail = false } = options;
   const created = new Map<string, CreatedCorrection>();

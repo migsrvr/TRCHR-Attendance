@@ -1,6 +1,7 @@
 import { Bell, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
 
+import { SignOutButton } from "@/components/shell/sign-out-button";
 import type { HrIdentityVM } from "@/lib/ui/view-models";
 
 export function HrTopbar({
@@ -68,6 +69,7 @@ export function HrTopbar({
             <p className="text-[13px] font-semibold leading-[18px]">{identity.name}</p>
             <p className="text-xs leading-4 text-muted-foreground">{identity.roleLabel}</p>
           </div>
+          <SignOutButton compact />
         </div>
       </div>
     </header>

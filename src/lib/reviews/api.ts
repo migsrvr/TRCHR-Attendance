@@ -1,15 +1,20 @@
 /**
- * Client-side review decisions (Technical Design section 10). Each decision
- * names the request version HR was looking at; if the intern changed the
- * request since (a reply, a new proposal), the server answers 409
- * REQUEST_CHANGED and nothing is saved, so HR never decides on stale facts.
+ * Client-side HR review decisions (harmonized with Technical Design §§8 & 10).
+ *
+ * Calls POST /api/v1/hr/corrections/{id}/reviews with operationKey,
+ * expectedRequestVersion, expectedSessionVersion, expectedAttendanceVersion,
+ * and Prisma-aligned decision ("APPROVE" | "REJECT" | "NEEDS_INFO").
  */
 
+import { newId } from "@/lib/ui/id";
 import type { ReviewDecision } from "@/lib/ui/review-decision";
 
 export interface DecideRequest {
   correctionId: string;
   version: number;
+  operationKey?: string;
+  expectedSessionVersion?: number | null;
+  expectedAttendanceVersion?: number;
   decision: ReviewDecision;
   note: string;
 }
@@ -23,14 +28,15 @@ export type DecideResult = { ok: true; value: Decided } | { ok: false; conflict:
 
 export interface ReviewsApi {
   decide(request: DecideRequest): Promise<DecideResult>;
+  retryJev(correctionId: string): Promise<{ ok: true } | { ok: false; message: string }>;
 }
 
 const GENERIC = "Couldn't save the decision. Check your connection and try again.";
 
-/** Error codes the review routes are expected to return; proposed here, the routes must match. */
 const MESSAGES: Record<string, string> = {
   REQUEST_CHANGED: "This request changed while you were reading it. Refresh to see the latest before you decide.",
   REQUEST_FINALIZED: "Someone already decided this request. Refresh to see the decision.",
+  INTERVAL_OVERLAP: "The proposed times overlap another attendance session on this day.",
   NOTE_REQUIRED: "Write a short note. The intern sees it with your decision.",
   FORBIDDEN: "Only HR can decide requests. Sign in with an HR account.",
   UNAUTHENTICATED: "You've been signed out. Sign in again, then decide again.",
@@ -52,16 +58,29 @@ const STATUS: Record<ReviewDecision, Decided["status"]> = {
   ASK_INFO: "NEEDS_INFO",
 };
 
-export function createHttpReviewsApi(base = "/api/v1"): ReviewsApi {
+const WIRE_DECISION: Record<ReviewDecision, "APPROVE" | "REJECT" | "NEEDS_INFO"> = {
+  APPROVE: "APPROVE",
+  REJECT: "REJECT",
+  ASK_INFO: "NEEDS_INFO",
+};
+
+export function createHttpReviewsApi(base = "/api/v1/hr"): ReviewsApi {
   return {
-    async decide({ correctionId, ...body }) {
+    async decide({ correctionId, version, operationKey, expectedSessionVersion, expectedAttendanceVersion, decision, note }) {
       try {
-        const response = await fetch(`${base}/corrections/${encodeURIComponent(correctionId)}/decision`, {
+        const response = await fetch(`${base}/corrections/${encodeURIComponent(correctionId)}/reviews`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
           cache: "no-store",
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            operationKey: operationKey ?? newId(),
+            decision: WIRE_DECISION[decision],
+            note,
+            expectedRequestVersion: version,
+            ...(expectedSessionVersion !== undefined ? { expectedSessionVersion } : {}),
+            ...(expectedAttendanceVersion !== undefined ? { expectedAttendanceVersion } : {}),
+          }),
         });
         const json: unknown = await response.json().catch(() => null);
         if (response.ok) return { ok: true, value: json as Decided };
@@ -69,6 +88,21 @@ export function createHttpReviewsApi(base = "/api/v1"): ReviewsApi {
         return { ok: false, conflict: code === "REQUEST_CHANGED", message: reviewErrorMessage(response.status, json) };
       } catch {
         return { ok: false, conflict: false, message: GENERIC };
+      }
+    },
+
+    async retryJev(correctionId) {
+      try {
+        const response = await fetch(`${base}/corrections/${encodeURIComponent(correctionId)}/jev-retry`, {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (response.ok) return { ok: true };
+        const json: unknown = await response.json().catch(() => null);
+        return { ok: false, message: reviewErrorMessage(response.status, json) };
+      } catch {
+        return { ok: false, message: GENERIC };
       }
     },
   };
@@ -84,6 +118,10 @@ export function createMockReviewsApi(options: { delayMs?: number; conflict?: boo
         return { ok: false, conflict: true, message: reviewErrorMessage(409, { error: { code: "REQUEST_CHANGED" } }) };
       }
       return { ok: true, value: { status: STATUS[request.decision], version: request.version + 1 } };
+    },
+    async retryJev() {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return { ok: true };
     },
   };
 }

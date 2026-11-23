@@ -7,15 +7,23 @@ import { useRef, useState } from "react";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { createHttpSetupApi, createMockSetupApi } from "@/lib/setup/api";
 
+const EXPIRY_OPTIONS = [
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days (recommended)" },
+  { value: "180", label: "180 days" },
+  { value: "365", label: "365 days" },
+] as const;
+
 /** Print and Rotate for an active checkpoint. Rotating is confirmed first: it revokes printed copies at once. */
 export function CheckpointActions({ id, label, mock }: { id: string; label: string; mock: boolean }) {
   const [api] = useState(() => (mock ? createMockSetupApi() : createHttpSetupApi()));
+  const [expiresInDays, setExpiresInDays] = useState("90");
   const [state, setState] = useState<{ kind: "idle" | "rotating" } | { kind: "rotated"; version: number } | { kind: "error"; message: string }>({ kind: "idle" });
   const confirmRef = useRef<HTMLDialogElement>(null);
 
   async function rotate() {
     setState({ kind: "rotating" });
-    const result = await api.rotateCheckpoint(id);
+    const result = await api.rotateCheckpoint(id, { expiresInDays: Number(expiresInDays) });
     confirmRef.current?.close();
     setState(result.ok ? { kind: "rotated", version: result.value.codeVersion } : { kind: "error", message: result.message });
   }
@@ -53,6 +61,23 @@ export function CheckpointActions({ id, label, mock }: { id: string; label: stri
           Every printed copy of the current code stops working immediately. Interns can&apos;t scan {label} until the new code
           is posted.
         </p>
+        <div className="mt-4 flex flex-col gap-1.5">
+          <label htmlFor={`rotate-${id}-expiry`} className="text-xs font-semibold leading-4">
+            New code validity
+          </label>
+          <select
+            id={`rotate-${id}-expiry`}
+            value={expiresInDays}
+            onChange={(event) => setExpiresInDays(event.target.value)}
+            className="h-9 rounded-btn border border-border bg-card px-3 text-sm text-foreground"
+          >
+            {EXPIRY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={() => confirmRef.current?.close()}>
             Cancel

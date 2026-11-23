@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { HrShell } from "@/components/shell/hr-shell";
 import { ReviewDetailView } from "@/components/views/hr/review-detail-view";
+import { isMockModeEnabled } from "@/lib/auth/session";
 import { formatShortDate } from "@/lib/ui/format";
 import { getHrShell, getReviewDetail } from "@/lib/ui/queries/hr";
 
@@ -19,8 +20,7 @@ export default async function HrReviewDetailPage({ params, searchParams }: { par
   const [shell, detail] = await Promise.all([getHrShell(), getReviewDetail(id)]);
   if (!detail) notFound();
 
-  // ?conflict=1 previews the "request changed" state with the development mock.
-  const isDevelopment = process.env.NODE_ENV !== "production";
+  const mock = isMockModeEnabled();
   return (
     <HrShell
       shell={shell}
@@ -28,7 +28,7 @@ export default async function HrReviewDetailPage({ params, searchParams }: { par
       title={`${detail.internName} · ${formatShortDate(detail.dateIso)}`}
       breadcrumb={{ href: "/hr/reviews", label: "Reviews" }}
     >
-      <ReviewDetailView data={detail} mock={isDevelopment} initialConflict={isDevelopment && query.conflict === "1"} />
+      <ReviewDetailView data={detail} mock={mock} initialConflict={mock && query.conflict === "1"} />
     </HrShell>
   );
 }

@@ -7,6 +7,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatusMark } from "@/components/ui/status-mark";
 import { DecisionForm } from "@/components/views/hr/decision-form";
+import { JevRetryButton } from "@/components/views/hr/jev-retry-button";
 import { hrReasonLabel } from "@/lib/ui/correction-form";
 import { formatDuration, formatHours, formatShortDate } from "@/lib/ui/format";
 import type { ReviewDetailVM, ReviewTimesVM } from "@/lib/ui/view-models";
@@ -43,7 +44,7 @@ function TimesTimeline({ title, times, data, ticks }: { title: string; times: Re
   );
 }
 
-function JevCard({ data, firstName }: { data: ReviewDetailVM; firstName: string }) {
+function JevCard({ data, firstName, mock, open }: { data: ReviewDetailVM; firstName: string; mock: boolean; open: boolean }) {
   const { jev } = data;
   return (
     <Card labelledBy="jev-title">
@@ -77,12 +78,31 @@ function JevCard({ data, firstName }: { data: ReviewDetailVM; firstName: string 
             {jev.version < data.version ? ` ${firstName} changed the request after this reading.` : ""}
           </p>
         </div>
+      ) : jev.status === "pending" ? (
+        <div className="px-5 pb-5">
+          <p className="text-sm font-semibold leading-5">Reading…</p>
+          <p className="mt-1 text-xs leading-[18px] text-muted-foreground">
+            Jev is evaluating request version {data.version}. You can decide manually anytime without waiting.
+          </p>
+        </div>
+      ) : jev.status === "superseded" ? (
+        <div className="flex flex-col gap-2.5 px-5 pb-5">
+          <div>
+            <p className="text-xs leading-4 text-muted-foreground">Prior category (superseded)</p>
+            <p className="mt-0.5 text-sm font-medium leading-5 text-muted-foreground line-through">{jev.category}</p>
+          </div>
+          <p className="border-t border-hairline pt-2.5 text-xs leading-[18px] text-muted-foreground">
+            Covers request version {jev.version} · {jev.model} · {jev.atLabel}. {firstName} updated the request to version{" "}
+            {data.version}; a fresh reading is queued.
+          </p>
+        </div>
       ) : (
         <div className="px-5 pb-5">
           <p className="text-sm font-semibold leading-5">Manual review</p>
           <p className="mt-1 text-xs leading-[18px] text-muted-foreground">
             Jev couldn&apos;t read this request, so it has no category. Decide from the explanation and the scans.
           </p>
+          {jev.canRetry && open ? <JevRetryButton correctionId={data.id} mock={mock} /> : null}
         </div>
       )}
     </Card>
@@ -231,6 +251,8 @@ export function ReviewDetailView({
               <DecisionForm
                 correctionId={data.id}
                 version={data.version}
+                expectedSessionVersion={data.expectedSessionVersion}
+                expectedAttendanceVersion={data.expectedAttendanceVersion}
                 firstName={firstName}
                 dateLabel={dateLabel}
                 mock={mock}
@@ -246,7 +268,7 @@ export function ReviewDetailView({
         </div>
 
         <div className="flex min-w-0 shrink grow basis-80 flex-col gap-5">
-          <JevCard data={data} firstName={firstName} />
+          <JevCard data={data} firstName={firstName} mock={mock} open={open} />
           <EvidenceCard data={data} />
           <Card labelledBy="history-title">
             <CardHeader id="history-title" title="History" />

@@ -1,7 +1,8 @@
 /**
- * Browser-side sign-in and password setup, against Better Auth's routes
- * (better-auth 1.7: POST /api/auth/sign-in/email, POST /api/auth/reset-password).
- * The HR setup link carries a reset token; setting the password redeems it.
+ * Browser-side sign-in, password setup, and sign-out client.
+ * - Sign-in and sign-out call Better Auth routes (/api/auth/sign-in/email, /api/auth/sign-out).
+ * - Password setup calls POST /api/v1/auth/setup-password so redeeming the link
+ *   atomically activates the PENDING account and establishes a live session cookie.
  */
 
 export type SignInFailure = "invalid" | "disabled" | "rate-limited" | "network";
@@ -13,6 +14,7 @@ export type SetPasswordResult = { ok: true } | { ok: false; reason: SetPasswordF
 export interface AuthApi {
   signIn(input: { email: string; password: string; rememberMe: boolean }): Promise<SignInResult>;
   setPassword(input: { token: string; newPassword: string }): Promise<SetPasswordResult>;
+  signOut(): Promise<void>;
 }
 
 type AuthFailure = SignInFailure | SetPasswordFailure;
@@ -22,6 +24,7 @@ const CODE_TO_REASON: Record<string, AuthFailure> = {
   INVALID_EMAIL: "invalid",
   INVALID_PASSWORD: "invalid",
   ACCOUNT_DISABLED: "disabled",
+  ACCOUNT_PENDING: "invalid",
   USER_BANNED: "disabled",
   INVALID_TOKEN: "expired",
   TOKEN_EXPIRED: "expired",
@@ -30,8 +33,12 @@ const CODE_TO_REASON: Record<string, AuthFailure> = {
 };
 
 export function mapAuthError(status: number, body: unknown): AuthFailure {
-  const code = typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
-  if (typeof code === "string" && CODE_TO_REASON[code]) return CODE_TO_REASON[code];
+  const obj = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null;
+  const nestedError =
+    typeof obj?.error === "object" && obj.error !== null ? (obj.error as { code?: unknown }) : undefined;
+  const code = typeof obj?.code === "string" ? obj.code : typeof nestedError?.code === "string" ? nestedError.code : undefined;
+
+  if (code && CODE_TO_REASON[code]) return CODE_TO_REASON[code];
   if (status === 429) return "rate-limited";
   if (status === 401) return "invalid";
   return "network";
@@ -58,7 +65,7 @@ function homeFor(json: unknown): string {
   return role === "HR" ? "/hr" : "/dashboard";
 }
 
-export function createHttpAuthApi(base = "/api/auth"): AuthApi {
+export function createHttpAuthApi(base = "/api/auth", v1Base = "/api/v1"): AuthApi {
   return {
     async signIn({ email, password, rememberMe }) {
       const result = await post(`${base}/sign-in/email`, { email: email.trim(), password, rememberMe });
@@ -67,18 +74,19 @@ export function createHttpAuthApi(base = "/api/auth"): AuthApi {
       return { ok: false, reason: mapAuthError(result.status, result.json) as SignInFailure };
     },
     async setPassword({ token, newPassword }) {
-      const result = await post(`${base}/reset-password`, { token, newPassword });
+      const result = await post(`${v1Base}/auth/setup-password`, { token, newPassword });
       if (!result) return { ok: false, reason: "network" };
       if (result.status < 300) return { ok: true };
       return { ok: false, reason: mapAuthError(result.status, result.json) as SetPasswordFailure };
+    },
+    async signOut() {
+      await post(`${base}/sign-out`, {});
     },
   };
 }
 
 /**
- * Development stand-in while the database isn't connected. Emails starting
- * with "hr" land on the HR panel; the password "wrong" fails; the setup token
- * "expired" is refused.
+ * Development stand-in when USE_MOCK_APIS=1.
  */
 export function createMockAuthApi(options: { delayMs?: number } = {}): AuthApi {
   const { delayMs = 700 } = options;
@@ -92,6 +100,9 @@ export function createMockAuthApi(options: { delayMs?: number } = {}): AuthApi {
     async setPassword({ token }) {
       await wait();
       return token === "expired" ? { ok: false, reason: "expired" } : { ok: true };
+    },
+    async signOut() {
+      await wait();
     },
   };
 }

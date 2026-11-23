@@ -1,9 +1,9 @@
 -- Top Realty Intern Attendance System
--- Migration: 0_init_constraints
+-- Migration: 0001_init_constraints
 --
 -- Raw PostgreSQL constraints and indexes that Prisma cannot express directly.
--- Review together with prisma/schema.prisma before applying to any environment.
--- Requirements: PostgreSQL (btree_gist extension, availability depends on provider).
+-- Runs immediately after 0000_init_schema.
+-- Requirements: PostgreSQL 16+ with the btree_gist extension enabled.
 
 -- ---------------------------------------------------------------------------
 -- Extensions
@@ -18,6 +18,14 @@ CREATE EXTENSION IF NOT EXISTS "btree_gist";
 CREATE UNIQUE INDEX IF NOT EXISTS internship_one_active_per_intern
   ON "internship" ("intern_user_id")
   WHERE "status" = 'ACTIVE';
+
+-- ---------------------------------------------------------------------------
+-- One draft policy version per office
+-- ---------------------------------------------------------------------------
+
+CREATE UNIQUE INDEX IF NOT EXISTS attendance_policy_one_draft_per_office
+  ON "attendance_policy_version" ("office_id")
+  WHERE "status" = 'DRAFT';
 
 -- ---------------------------------------------------------------------------
 -- One unclosed work interval per internship (IN present, OUT absent, OPEN or REVIEW)
@@ -103,6 +111,10 @@ ALTER TABLE "office"
   ADD CONSTRAINT office_max_accuracy_positive
   CHECK ("max_accuracy_meters" > 0);
 
+ALTER TABLE "office"
+  ADD CONSTRAINT office_accuracy_within_radius
+  CHECK ("max_accuracy_meters" < "geofence_radius_meters");
+
 ALTER TABLE "internship"
   ADD CONSTRAINT internship_required_minutes_positive
   CHECK ("required_minutes" > 0);
@@ -114,12 +126,3 @@ ALTER TABLE "internship"
 ALTER TABLE "review_job"
   ADD CONSTRAINT review_job_attempts_nonnegative
   CHECK ("attempts" >= 0);
-
--- ---------------------------------------------------------------------------
--- Notes on invariants enforced by the Prisma schema itself (not repeated here):
---   * One final result per scan key: UNIQUE (actor_id, request_key) on scan_receipt.
---   * One application of an approval: UNIQUE (review_id) on attendance_revision.
---   * Unique AI work identity: UNIQUE on jev_assessment and review_job over
---     (correction_request_id, input_fingerprint, model_version, criteria_version).
---   * Attendance parent deletion uses ON DELETE RESTRICT; accounts are disabled.
--- ---------------------------------------------------------------------------

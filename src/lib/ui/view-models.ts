@@ -81,8 +81,10 @@ export interface NewCorrectionVM {
   todayIso: string;
   earliestDateIso: string;
   initialDateIso: string;
+  /** Optional open correction being replaced (supersedes it atomically on submit). */
+  replaceRequestId?: string;
   /** Days with at least one scan; days missing here had no scans. */
-  recordedByDate: Record<string, RecordedDay>;
+  recordedByDate: Record<string, RecordedDay & { sessionId?: string }>;
 }
 
 export interface SetupLinkVM {
@@ -230,12 +232,18 @@ export interface InternListVM {
   hasNextPage: boolean;
   page: number;
   departments: string[];
+  departmentOptions?: { id: string; name: string }[];
   officeLabel: string;
   defaultRequiredMinutes: number;
 }
 
 export interface InternProfileVM {
   id: string;
+  internshipId?: string;
+  departmentId?: string;
+  attendanceVersion?: number;
+  internshipStatus?: "ACTIVE" | "COMPLETED" | "CANCELLED";
+  availableDepartments?: { id: string; name: string }[];
   name: string;
   initials: string;
   email: string;
@@ -286,7 +294,15 @@ export type JevReadingVM =
       model: string;
       atLabel: string;
     }
-  | { status: "unavailable" };
+  | { status: "pending" }
+  | {
+      status: "superseded";
+      category: string;
+      version: number;
+      model: string;
+      atLabel: string;
+    }
+  | { status: "unavailable"; canRetry?: boolean };
 
 export interface ReviewRowVM {
   id: string;
@@ -333,6 +349,8 @@ export interface ReviewEvidenceVM {
 export interface ReviewDetailVM {
   id: string;
   version: number;
+  expectedSessionVersion?: number | null;
+  expectedAttendanceVersion?: number;
   internId: string;
   internName: string;
   department: string;
@@ -424,6 +442,9 @@ export interface AttendanceVM {
   department: string | null;
   status: AttendanceStatusFilter;
   periodLabel: string;
+  timeZone?: string;
+  from?: string;
+  to?: string;
   todayIso: string;
   nowClock: string;
   schedule: { start: string; end: string };
@@ -499,7 +520,17 @@ export interface CheckpointVM {
 }
 
 export interface OfficeSetupVM {
-  office: { name: string; pinLabel: string; timeZone: string; radiusM: number; maxAccuracyM: number; settingsVersion: number };
+  office: {
+    id?: string;
+    name: string;
+    pinLabel: string;
+    latitude?: number;
+    longitude?: number;
+    timeZone: string;
+    radiusM: number;
+    maxAccuracyM: number;
+    settingsVersion: number;
+  };
   activePolicy: PolicyVersionVM;
   policies: PolicyVersionVM[];
   checkpoints: CheckpointVM[];

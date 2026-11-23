@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { HrShell } from "@/components/shell/hr-shell";
 import { PoliciesView } from "@/components/views/hr/policies-view";
+import { isMockModeEnabled } from "@/lib/auth/session";
 import { getHrShell, getPolicies } from "@/lib/ui/queries/hr";
 
 export const metadata: Metadata = {
@@ -15,7 +16,7 @@ export default async function HrPoliciesPage({ searchParams }: { searchParams: S
   const [shell, data] = await Promise.all([getHrShell(), getPolicies(typeof version === "string" ? Number(version) : undefined)]);
   return (
     <HrShell shell={shell} active="policies" title="Policies">
-      <PoliciesView data={data} mock={process.env.NODE_ENV !== "production"} />
+      <PoliciesView data={data} mock={isMockModeEnabled()} />
     </HrShell>
   );
 }

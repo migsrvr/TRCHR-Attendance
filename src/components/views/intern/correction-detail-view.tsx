@@ -96,7 +96,10 @@ export function CorrectionDetailView({ data, mock }: { data: CorrectionDetailVM;
       {data.canReply ? (
         <p className="text-xs leading-[18px] text-muted-foreground">
           Need a different time?{" "}
-          <Link href={`/corrections/new?date=${data.dateIso}`} className="font-semibold text-primary">
+          <Link
+            href={`/corrections/new?date=${data.dateIso}&replace=${encodeURIComponent(data.id)}`}
+            className="font-semibold text-primary"
+          >
             Send a new request
           </Link>
           . It replaces this one.

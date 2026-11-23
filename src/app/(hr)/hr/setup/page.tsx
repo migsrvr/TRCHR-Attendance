@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { HrShell } from "@/components/shell/hr-shell";
 import { OfficeSetupView } from "@/components/views/hr/office-setup-view";
+import { isMockModeEnabled } from "@/lib/auth/session";
 import { getHrShell, getOfficeSetup } from "@/lib/ui/queries/hr";
 
 export const metadata: Metadata = {
@@ -12,7 +13,7 @@ export default async function HrOfficeSetupPage() {
   const [shell, data] = await Promise.all([getHrShell(), getOfficeSetup()]);
   return (
     <HrShell shell={shell} active="office" title="Office and QR">
-      <OfficeSetupView data={data} mock={process.env.NODE_ENV !== "production"} />
+      <OfficeSetupView data={data} mock={isMockModeEnabled()} />
     </HrShell>
   );
 }

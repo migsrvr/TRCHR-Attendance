@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { HrShell } from "@/components/shell/hr-shell";
 import { InternProfileView } from "@/components/views/hr/intern-profile-view";
+import { isMockModeEnabled } from "@/lib/auth/session";
 import { getHrShell, getInternProfile } from "@/lib/ui/queries/hr";
 
 type Params = Promise<{ id: string }>;
@@ -19,7 +20,7 @@ export default async function HrInternProfilePage({ params }: { params: Params }
 
   return (
     <HrShell shell={shell} active="interns" title={profile.name} breadcrumb={{ href: "/hr/interns", label: "Interns" }}>
-      <InternProfileView data={profile} mock={process.env.NODE_ENV !== "production"} />
+      <InternProfileView data={profile} mock={isMockModeEnabled()} />
     </HrShell>
   );
 }

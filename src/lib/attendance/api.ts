@@ -1,7 +1,5 @@
 /**
- * Client-side attendance actions for HR. For now only "ask the intern for a
- * correction" on a held session: it sends the intern a notice with a link to
- * the request form for that day. The route is proposed here and must match.
+ * Client-side attendance actions for HR (harmonized under /api/v1/hr/sessions/*).
  */
 
 export type ApiResult<T> = { ok: true; value: T } | { ok: false; message: string };
@@ -12,7 +10,7 @@ export interface AttendanceApi {
 
 const GENERIC = "Couldn't send. Check your connection and try again.";
 
-export function createHttpAttendanceApi(base = "/api/v1"): AttendanceApi {
+export function createHttpAttendanceApi(base = "/api/v1/hr"): AttendanceApi {
   return {
     async askForCorrection(sessionId) {
       try {

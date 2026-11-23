@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import type { InternTabId } from "@/components/shell/nav";
 import { InternTabBar } from "@/components/shell/intern-tabbar";
+import { SignOutButton } from "@/components/shell/sign-out-button";
 
 /**
  * Phone app frame for the intern screens.
@@ -58,6 +59,7 @@ export function InternShell({
             >
               {initials}
             </span>
+            <SignOutButton compact />
           </div>
         )}
       </header>

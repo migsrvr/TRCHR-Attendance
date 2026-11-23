@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { createHttpReviewsApi, createMockReviewsApi, type Decided } from "@/lib/reviews/api";
+import { newId } from "@/lib/ui/id";
 import { validateDecisionNote, type ReviewDecision } from "@/lib/ui/review-decision";
 
 const DONE_COPY: Record<Decided["status"], string> = {
@@ -21,6 +22,8 @@ const DONE_COPY: Record<Decided["status"], string> = {
 export function DecisionForm({
   correctionId,
   version,
+  expectedSessionVersion,
+  expectedAttendanceVersion,
   firstName,
   dateLabel,
   mock,
@@ -28,12 +31,15 @@ export function DecisionForm({
 }: {
   correctionId: string;
   version: number;
+  expectedSessionVersion?: number | null;
+  expectedAttendanceVersion?: number;
   firstName: string;
   dateLabel: string;
   mock: boolean;
   initialConflict?: boolean;
 }) {
   const [api] = useState(() => (mock ? createMockReviewsApi({ conflict: initialConflict }) : createHttpReviewsApi()));
+  const [operationKey] = useState(newId);
   const [note, setNote] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);
   const [sending, setSending] = useState<ReviewDecision | null>(null);
@@ -52,7 +58,15 @@ export function DecisionForm({
     }
     setError(null);
     setSending(decision);
-    const result = await api.decide({ correctionId, version, decision, note: note.trim() });
+    const result = await api.decide({
+      correctionId,
+      version,
+      operationKey,
+      ...(expectedSessionVersion !== undefined ? { expectedSessionVersion } : {}),
+      ...(expectedAttendanceVersion !== undefined ? { expectedAttendanceVersion } : {}),
+      decision,
+      note: note.trim(),
+    });
     setSending(null);
     if (result.ok) setDone(result.value.status);
     else if (result.conflict) setConflict(true);

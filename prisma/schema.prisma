@@ -1,6 +1,6 @@
 // Top Realty Intern Attendance System
-// Prisma schema - 13 business entities + 4 operational tables + Better Auth models.
-// Physical additions (scan_intent, scan_receipt, review_job, audit_event) are proposed
+// Prisma schema - 14 business entities + 4 operational tables + Better Auth models.
+// Physical additions (scan_intent, scan_receipt, review_job, audit_event) are
 // extensions to the logical ERD documented in Technical Design v1.0, section 3.
 
 generator client {
@@ -33,6 +33,11 @@ enum InternshipStatus {
   CANCELLED
 }
 
+enum PolicyVersionStatus {
+  DRAFT
+  PUBLISHED
+}
+
 enum CheckpointAction {
   TIME_IN
   TIME_OUT
@@ -49,6 +54,14 @@ enum ScanValidationStatus {
   ACCEPTED
   REJECTED
   UNCERTAIN
+}
+
+enum CorrectionReasonCategory {
+  MISSED_CLOCK_IN
+  MISSED_CLOCK_OUT
+  WRONG_ACTION
+  TECHNICAL_ISSUE
+  OTHER
 }
 
 enum CorrectionRequestStatus {
@@ -86,15 +99,17 @@ enum ReviewJobState {
 // ---------------------------------------------------------------------------
 
 model User {
-  id            String     @id @default(uuid()) @db.Uuid
-  name          String
-  email         String     @unique
-  emailVerified Boolean    @default(false) @map("email_verified")
-  image         String?
-  role          UserRole   @default(INTERN)
-  status        UserStatus @default(PENDING)
-  createdAt     DateTime   @default(now()) @map("created_at")
-  updatedAt     DateTime   @updatedAt @map("updated_at")
+  id                 String     @id @default(uuid()) @db.Uuid
+  name               String
+  email              String     @unique
+  emailVerified      Boolean    @default(false) @map("email_verified")
+  image              String?
+  role               UserRole   @default(INTERN)
+  status             UserStatus @default(PENDING)
+  setupLinkSentAtUtc DateTime?  @map("setup_link_sent_at_utc")
+  lastSignInAtUtc    DateTime?  @map("last_sign_in_at_utc")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
 
   sessions     Session[]
   accounts     Account[]
@@ -160,13 +175,15 @@ model Verification {
 // ---------------------------------------------------------------------------
 
 model Department {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id               String    @id @default(uuid()) @db.Uuid
+  name             String    @unique
+  active           Boolean   @default(true)
+  deactivatedAtUtc DateTime? @map("deactivated_at_utc")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   internships Internship[]
+  assignments InternshipAssignment[]
 
   @@map("department")
 }
@@ -183,9 +200,10 @@ model Office {
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
-  internships      Internship[]
-  policyVersions   AttendancePolicyVersion[]
-  checkpoints      QrCheckpoint[]
+  internships    Internship[]
+  assignments    InternshipAssignment[]
+  policyVersions AttendancePolicyVersion[]
+  checkpoints    QrCheckpoint[]
 
   @@map("office")
 }
@@ -200,12 +218,14 @@ model Internship {
   endDate           DateTime?        @map("end_date") @db.Date
   status            InternshipStatus @default(ACTIVE)
   attendanceVersion Int              @default(1) @map("attendance_version")
+  provisionKey      String?          @unique @map("provision_key")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
-  intern             User                @relation(fields: [internUserId], references: [id], onDelete: Restrict)
-  department         Department          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-  office             Office              @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  intern             User                   @relation(fields: [internUserId], references: [id], onDelete: Restrict)
+  department         Department             @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  office             Office                 @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  assignments        InternshipAssignment[]
   sessions           AttendanceSession[]
   scans              AttendanceScan[]
   correctionRequests CorrectionRequest[]
@@ -216,15 +236,35 @@ model Internship {
   @@map("internship")
 }
 
+model InternshipAssignment {
+  id                String    @id @default(uuid()) @db.Uuid
+  internshipId      String    @map("internship_id") @db.Uuid
+  departmentId      String    @map("department_id") @db.Uuid
+  officeId          String    @map("office_id") @db.Uuid
+  effectiveFromDate DateTime  @map("effective_from_date") @db.Date
+  effectiveToDate   DateTime? @map("effective_to_date") @db.Date
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  internship Internship @relation(fields: [internshipId], references: [id], onDelete: Restrict)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  office     Office     @relation(fields: [officeId], references: [id], onDelete: Restrict)
+
+  @@index([internshipId, effectiveFromDate])
+  @@map("internship_assignment")
+}
+
 model AttendancePolicyVersion {
-  id               String   @id @default(uuid()) @db.Uuid
-  officeId         String   @map("office_id") @db.Uuid
-  version          Int
-  scheduleRules    Json     @map("schedule_rules")
-  breakRules       Json     @map("break_rules")
-  creditRules      Json     @map("credit_rules")
-  effectiveFromUtc DateTime @map("effective_from_utc")
-  createdAt        DateTime @default(now()) @map("created_at")
+  id                String              @id @default(uuid()) @db.Uuid
+  officeId          String              @map("office_id") @db.Uuid
+  version           Int
+  status            PolicyVersionStatus @default(PUBLISHED)
+  copiedFromVersion Int?                @map("copied_from_version")
+  scheduleRules     Json                @map("schedule_rules")
+  breakRules        Json                @map("break_rules")
+  creditRules       Json                @map("credit_rules")
+  effectiveFromUtc  DateTime            @map("effective_from_utc")
+  publishedAtUtc    DateTime?           @map("published_at_utc")
+  createdAt         DateTime            @default(now()) @map("created_at")
 
   office   Office              @relation(fields: [officeId], references: [id], onDelete: Restrict)
   sessions AttendanceSession[]
@@ -234,14 +274,16 @@ model AttendancePolicyVersion {
 }
 
 model QrCheckpoint {
-  id                String           @id @default(uuid()) @db.Uuid
-  officeId          String           @map("office_id") @db.Uuid
-  name              String
-  action            CheckpointAction
-  active            Boolean          @default(true)
-  credentialVersion Int              @default(1) @map("credential_version")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
+  id                     String           @id @default(uuid()) @db.Uuid
+  officeId               String           @map("office_id") @db.Uuid
+  name                   String
+  action                 CheckpointAction
+  active                 Boolean          @default(true)
+  credentialVersion      Int              @default(1) @map("credential_version")
+  credentialExpiresAtUtc DateTime?        @map("credential_expires_at_utc")
+  revokedAtUtc           DateTime?        @map("revoked_at_utc")
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @updatedAt @map("updated_at")
 
   office      Office           @relation(fields: [officeId], references: [id], onDelete: Restrict)
   scans       AttendanceScan[]
@@ -251,21 +293,22 @@ model QrCheckpoint {
 }
 
 model AttendanceSession {
-  id                   String                  @id @default(uuid()) @db.Uuid
-  internshipId         String                  @map("internship_id") @db.Uuid
-  policyVersionId      String                  @map("policy_version_id") @db.Uuid
-  attendanceDate       DateTime                @map("attendance_date") @db.Date
-  effectiveTimeInUtc   DateTime?               @map("effective_time_in_utc")
-  effectiveTimeOutUtc  DateTime?               @map("effective_time_out_utc")
-  status               AttendanceSessionStatus @default(OPEN)
-  version              Int                     @default(1)
-  timezoneSnapshot     String                  @map("timezone_snapshot")
-  departmentIdSnapshot String                  @map("department_id_snapshot") @db.Uuid
-  createdAt            DateTime                @default(now()) @map("created_at")
-  updatedAt            DateTime                @updatedAt @map("updated_at")
+  id                       String                  @id @default(uuid()) @db.Uuid
+  internshipId             String                  @map("internship_id") @db.Uuid
+  policyVersionId          String                  @map("policy_version_id") @db.Uuid
+  attendanceDate           DateTime                @map("attendance_date") @db.Date
+  effectiveTimeInUtc       DateTime?               @map("effective_time_in_utc")
+  effectiveTimeOutUtc      DateTime?               @map("effective_time_out_utc")
+  status                   AttendanceSessionStatus @default(OPEN)
+  version                  Int                     @default(1)
+  timezoneSnapshot         String                  @map("timezone_snapshot")
+  departmentIdSnapshot     String                  @map("department_id_snapshot") @db.Uuid
+  correctionRequestedAtUtc DateTime?               @map("correction_requested_at_utc")
+  createdAt                DateTime                @default(now()) @map("created_at")
+  updatedAt                DateTime                @updatedAt @map("updated_at")
 
-  internship    Internship               @relation(fields: [internshipId], references: [id], onDelete: Restrict)
-  policyVersion AttendancePolicyVersion  @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  internship    Internship              @relation(fields: [internshipId], references: [id], onDelete: Restrict)
+  policyVersion AttendancePolicyVersion @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
   scans         AttendanceScan[]
   corrections   CorrectionRequest[]
   revisions     AttendanceRevision[]
@@ -297,20 +340,22 @@ model AttendanceScan {
 }
 
 model CorrectionRequest {
-  id                 String                  @id @default(uuid()) @db.Uuid
-  internshipId       String                  @map("internship_id") @db.Uuid
-  sessionId          String?                 @map("session_id") @db.Uuid
-  baseSessionVersion Int?                    @map("base_session_version")
-  requestVersion     Int                     @default(1) @map("request_version")
-  payloadHash        String                  @map("payload_hash")
-  attendanceDate     DateTime                @map("attendance_date") @db.Date
-  proposedTimeInUtc  DateTime?               @map("proposed_time_in_utc")
-  proposedTimeOutUtc DateTime?               @map("proposed_time_out_utc")
+  id                 String                   @id @default(uuid()) @db.Uuid
+  internshipId       String                   @map("internship_id") @db.Uuid
+  sessionId          String?                  @map("session_id") @db.Uuid
+  baseSessionVersion Int?                     @map("base_session_version")
+  requestVersion     Int                      @default(1) @map("request_version")
+  clientRequestId    String                   @map("client_request_id")
+  payloadHash        String                   @map("payload_hash")
+  attendanceDate     DateTime                 @map("attendance_date") @db.Date
+  proposedTimeInUtc  DateTime?                @map("proposed_time_in_utc")
+  proposedTimeOutUtc DateTime?                @map("proposed_time_out_utc")
+  reasonCategory     CorrectionReasonCategory @default(OTHER) @map("reason_category")
   reason             String
-  status             CorrectionRequestStatus @default(PENDING)
-  previousRequestId  String?                 @map("previous_request_id") @db.Uuid
-  submittedAtUtc     DateTime                @default(now()) @map("submitted_at_utc")
-  updatedAt          DateTime                @updatedAt @map("updated_at")
+  status             CorrectionRequestStatus  @default(PENDING)
+  previousRequestId  String?                  @map("previous_request_id") @db.Uuid
+  submittedAtUtc     DateTime                 @default(now()) @map("submitted_at_utc")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
 
   internship      Internship          @relation(fields: [internshipId], references: [id], onDelete: Restrict)
   session         AttendanceSession?  @relation(fields: [sessionId], references: [id], onDelete: Restrict)
@@ -321,6 +366,7 @@ model CorrectionRequest {
   assessments     JevAssessment[]
   reviewJobs      ReviewJob[]
 
+  @@unique([internshipId, clientRequestId])
   @@index([status, submittedAtUtc, id])
   @@map("correction_request")
 }
@@ -330,12 +376,13 @@ model HrReview {
   correctionRequestId String     @map("correction_request_id") @db.Uuid
   reviewerUserId      String     @map("reviewer_user_id") @db.Uuid
   operationKey        String     @unique @map("operation_key")
+  payloadHash         String     @map("payload_hash")
   decision            HrDecision
   note                String?
   reviewedAtUtc       DateTime   @default(now()) @map("reviewed_at_utc")
 
-  correctionRequest CorrectionRequest  @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
-  reviewer          User               @relation(fields: [reviewerUserId], references: [id], onDelete: Restrict)
+  correctionRequest CorrectionRequest   @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
+  reviewer          User                @relation(fields: [reviewerUserId], references: [id], onDelete: Restrict)
   revision          AttendanceRevision?
 
   @@map("hr_review")

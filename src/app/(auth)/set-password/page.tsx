@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { AuthFrame } from "@/components/shell/auth-frame";
 import { SetPasswordForm } from "@/components/views/auth/set-password-form";
+import { isMockModeEnabled } from "@/lib/auth/session";
 import { getSetupLink } from "@/lib/ui/queries/auth";
 
 export const metadata: Metadata = {
@@ -14,7 +15,7 @@ export default async function SetPasswordPage({ searchParams }: { searchParams: 
   const params = await searchParams;
   const token = typeof params.token === "string" ? params.token : "";
   const link = await getSetupLink(token);
-  const form = <SetPasswordForm link={link} token={token} mock={process.env.NODE_ENV !== "production"} />;
+  const form = <SetPasswordForm link={link} token={token} mock={isMockModeEnabled()} />;
 
   // Interns go on to the camera and location steps; HR goes straight to the panel.
   return link?.role === "INTERN" ? (

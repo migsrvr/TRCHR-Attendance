@@ -1,9 +1,15 @@
 /**
- * View-model queries for the HR screens. They return canvas sample data
- * (src/lib/ui/fixtures/hr.ts) until the attendance, corrections and
- * internship modules are implemented. Each TODO names what replaces it.
+ * View-model queries for the HR screens.
+ * Calls live PostgreSQL domain modules by default; falls back to canvas sample
+ * fixtures only when USE_MOCK_APIS=1 or inside unit tests.
  */
 
+import { requirePageHr } from "@/lib/auth/session";
+import { prisma } from "@/lib/db";
+import { hrReasonLabel } from "@/lib/ui/correction-form";
+import { datesBetween, defaultPeriod, dtrSearch, formatRange, isWeekend, parseDtrScope, workdaysBetween } from "@/lib/ui/dtr";
+import { ATTENDANCE_DAYS, ATTENDANCE_PERIOD_LABEL, canAskForCorrection, SESSION_EXTRAS } from "@/lib/ui/fixtures/attendance";
+import { DTR_NOTES, DTR_POLICY_LABEL } from "@/lib/ui/fixtures/dtr";
 import {
   ANA_PROFILE,
   DEPARTMENTS,
@@ -18,8 +24,8 @@ import {
   OVERVIEW_COUNTS,
   POLICY_LABEL,
 } from "@/lib/ui/fixtures/hr";
-import { ATTENDANCE_DAYS, ATTENDANCE_PERIOD_LABEL, canAskForCorrection, SESSION_EXTRAS } from "@/lib/ui/fixtures/attendance";
-import { DTR_NOTES, DTR_POLICY_LABEL } from "@/lib/ui/fixtures/dtr";
+import { ANA_HOURS, CORRECTIONS, OCTOBER_DAYS, SCHEDULE, SNAPSHOT_NOW, SNAPSHOT_TODAY } from "@/lib/ui/fixtures/intern";
+import { REVIEW_COUNTS, REVIEW_DETAILS, REVIEW_ROWS } from "@/lib/ui/fixtures/reviews";
 import {
   AUDIT_ENTRIES,
   AUDIT_TOTAL,
@@ -30,52 +36,96 @@ import {
   POLICY_EXAMPLE,
   POLICY_VERSIONS,
 } from "@/lib/ui/fixtures/setup";
-import { REVIEW_COUNTS, REVIEW_DETAILS, REVIEW_ROWS } from "@/lib/ui/fixtures/reviews";
-import { hrReasonLabel } from "@/lib/ui/correction-form";
-import { datesBetween, defaultPeriod, dtrSearch, formatRange, isWeekend, parseDtrScope, workdaysBetween } from "@/lib/ui/dtr";
 import { hoursProgress } from "@/lib/ui/hours";
-import { ANA_HOURS, CORRECTIONS, OCTOBER_DAYS, SCHEDULE, SNAPSHOT_NOW, SNAPSHOT_TODAY } from "@/lib/ui/fixtures/intern";
 import { DEFAULT_REQUIRED_HOURS } from "@/lib/ui/intern-form";
 import type { StatusKind } from "@/lib/ui/status";
 import { clockToMinutes } from "@/lib/ui/timeline";
 import type {
-  AuditCategory,
-  CheckpointVM,
-  AuditLogVM,
   AttendanceRowVM,
+  AttendanceStatusFilter,
+  AttendanceVM,
+  AuditCategory,
+  AuditLogVM,
+  CheckpointVM,
   DepartmentRowVM,
-  OfficeSetupVM,
-  PoliciesVM,
   DtrDayVM,
   DtrDepartmentReportVM,
   DtrInternReportVM,
   DtrPageVM,
-  AttendanceStatusFilter,
-  AttendanceVM,
   HrOverviewVM,
   HrShellVM,
   InternAccountTab,
   InternListVM,
   InternProfileVM,
+  OfficeSetupVM,
+  PoliciesVM,
   ReviewDetailVM,
   ReviewQueueVM,
   ReviewTab,
   SessionDetailVM,
   SessionScanVM,
 } from "@/lib/ui/view-models";
+import {
+  getInternProfile as liveGetInternProfile,
+  listDepartments as liveListDepartments,
+  listInterns as liveListInterns,
+} from "@/modules/accounts";
+import {
+  getHrTodayOverview as liveGetHrTodayOverview,
+  listSessionsByDay as liveListSessionsByDay,
+} from "@/modules/attendance";
+import { listAuditEntries as liveListAuditEntries } from "@/modules/audit";
+import {
+  countWaitingOnHr,
+  getCorrectionForReview as liveGetCorrectionForReview,
+  listForReview as liveListForReview,
+} from "@/modules/corrections";
+import {
+  getOfficeSetup as liveGetOfficeSetup,
+  issueCheckpointToken as liveIssueCheckpointToken,
+  listPolicyVersions as liveListPolicyVersions,
+} from "@/modules/offices";
+import { buildDtrPage as liveBuildDtrPage } from "@/modules/reports";
 
 const HOURS_ROWS_SHOWN = 4;
 
+function useFixtures(): boolean {
+  return process.env.USE_MOCK_APIS === "1" || process.env.NODE_ENV === "test";
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0]!.toUpperCase())
+    .slice(0, 2)
+    .join("");
+
 /** The frame every HR page shares. */
 export async function getHrShell(): Promise<HrShellVM> {
-  // TODO(module): signed-in HR user from the Better Auth session; review
-  // count from src/modules/corrections countWaitingOnHr (corrections + held sessions).
-  return { identity: HR_IDENTITY, reviewCount: NEEDS_YOU.length, officeLabel: OFFICE_LABEL };
+  if (useFixtures()) {
+    return { identity: HR_IDENTITY, reviewCount: NEEDS_YOU.length, officeLabel: OFFICE_LABEL };
+  }
+  const actor = (await requirePageHr("/hr"))!;
+  const [reviewCount, office] = await Promise.all([
+    countWaitingOnHr(),
+    prisma.office.findFirst({ select: { name: true, timezone: true }, orderBy: { createdAt: "asc" } }),
+  ]);
+  return {
+    identity: {
+      name: actor.name,
+      roleLabel: "HR",
+      initials: initials(actor.name) || "HR",
+    },
+    reviewCount,
+    officeLabel: office ? `${office.name} · ${office.timezone}` : "Office not configured",
+  };
 }
 
 export async function getHrOverview(): Promise<HrOverviewVM> {
-  // TODO(module): src/modules/attendance getTodaySummary, src/modules/corrections
-  // listWaitingOnHr, src/modules/internships listHoursProgress.
+  if (!useFixtures()) {
+    return liveGetHrTodayOverview();
+  }
   const byPace = [...HOURS_ROWS].sort((a, b) => a.paceDeltaMinutes - b.paceDeltaMinutes);
   const byEndDate = [...HOURS_ROWS].sort((a, b) => a.endDateIso.localeCompare(b.endDateIso));
   return {
@@ -106,7 +156,9 @@ export async function getInternList(filters: {
   department?: string | null;
   page?: number;
 }): Promise<InternListVM> {
-  // TODO(module): src/modules/accounts listInterns (paged, with counts per account tab).
+  if (!useFixtures()) {
+    return liveListInterns(filters);
+  }
   const tab = filters.tab && TABS.includes(filters.tab) ? filters.tab : "all";
   const query = (filters.query ?? "").trim();
   const department = filters.department && DEPARTMENTS.includes(filters.department) ? filters.department : null;
@@ -125,7 +177,6 @@ export async function getInternList(filters: {
     department,
     counts: INTERN_COUNTS,
     rows: rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    // The sample rows are one page of the canvas totals; a search only covers the sample.
     total: filtered ? rows.length : INTERN_COUNTS[tab],
     hasNextPage: rows.length > page * PAGE_SIZE,
     page,
@@ -135,30 +186,21 @@ export async function getInternList(filters: {
   };
 }
 
-/** The office date `days` before an office date ("YYYY-MM-DD"). */
 function daysBefore(isoDate: string, days: number): string {
   const date = new Date(`${isoDate}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() - days);
   return date.toISOString().slice(0, 10);
 }
 
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0]!.toUpperCase())
-    .slice(0, 2)
-    .join("");
-
-/** HR's view of a correction: pending ones escalate with age, like on the Overview. */
 function hrCorrectionStatus(id: string, value: (typeof CORRECTIONS)[number]["status"]): StatusKind {
   const waiting = NEEDS_YOU.find((item) => item.id === id);
   return waiting ? waiting.status : { type: "correction", value };
 }
 
 export async function getInternProfile(id: string): Promise<InternProfileVM | null> {
-  // TODO(module): src/modules/internships getInternProfile and
-  // src/modules/attendance listDays (last 7 office days).
+  if (!useFixtures()) {
+    return liveGetInternProfile(id);
+  }
   const row = INTERN_ROWS.find((candidate) => candidate.id === id);
   if (!row || row.tab === "pending") return null;
   const live = OFFICE_TODAY.find((item) => item.internId === id);
@@ -231,8 +273,12 @@ export async function getReviewQueue(filters: {
   query?: string;
   department?: string | null;
   jev?: ReviewQueueVM["jev"];
+  from?: string;
+  to?: string;
 }): Promise<ReviewQueueVM> {
-  // TODO(module): src/modules/corrections listForReview (plus held sessions from attendance), oldest first.
+  if (!useFixtures()) {
+    return liveListForReview(filters);
+  }
   const tab = filters.tab && REVIEW_TABS.includes(filters.tab) ? filters.tab : "you";
   const query = (filters.query ?? "").trim();
   const department = filters.department && DEPARTMENTS.includes(filters.department) ? filters.department : null;
@@ -256,14 +302,14 @@ export async function getReviewQueue(filters: {
 }
 
 export async function getReviewDetail(id: string): Promise<ReviewDetailVM | null> {
-  // TODO(module): src/modules/corrections getCorrectionForReview (with version,
-  // revisions, Jev run and the day's scan evidence).
+  if (!useFixtures()) {
+    return liveGetCorrectionForReview(id);
+  }
   return REVIEW_DETAILS[id] ?? null;
 }
 
 const ATTENDANCE_FILTERS: AttendanceStatusFilter[] = ["all", "open", "complete", "review", "rejected"];
 
-/** Sample scans for a session's times: an IN at each start and an OUT at each end. */
 function sampleScans(row: AttendanceRowVM): SessionScanVM[] {
   return row.sessions.flatMap((session, index) => {
     const seconds = (offset: number) => String((row.id.length * 7 + index * 13 + offset) % 60).padStart(2, "0");
@@ -305,12 +351,16 @@ function sessionDetail(row: AttendanceRowVM, dateIso: string): SessionDetailVM {
 
 export async function getAttendance(filters: {
   query?: string;
+  internId?: string;
   department?: string | null;
   status?: AttendanceStatusFilter;
   session?: string;
+  from?: string;
+  to?: string;
 }): Promise<AttendanceVM> {
-  // TODO(module): src/modules/attendance listSessionsByDay (office-day grouping,
-  // effective sessions) and getSessionDetail (original scans, revisions).
+  if (!useFixtures()) {
+    return liveListSessionsByDay(filters);
+  }
   const query = (filters.query ?? "").trim();
   const department = filters.department && DEPARTMENTS.includes(filters.department) ? filters.department : null;
   const status = filters.status && ATTENDANCE_FILTERS.includes(filters.status) ? filters.status : "all";
@@ -321,6 +371,7 @@ export async function getAttendance(filters: {
     rows: day.rows.filter(
       (row) =>
         (status === "all" || row.filter === status) &&
+        (!filters.internId || row.internId === filters.internId) &&
         (!department || row.department === department) &&
         (!needle || row.internName.toLowerCase().includes(needle)),
     ),
@@ -346,7 +397,6 @@ export async function getAttendance(filters: {
   };
 }
 
-/** An intern's DTR days in a range. Only Ana has daily records in the sample data. */
 function dtrDays(internId: string, from: string, to: string): DtrDayVM[] {
   if (internId !== "ana-reyes") return [];
   const notes = DTR_NOTES[internId] ?? {};
@@ -356,15 +406,16 @@ function dtrDays(internId: string, from: string, to: string): DtrDayVM[] {
       return isWeekend(dateIso) ? [] : [{ dateIso, sessions: [], state: "none", creditedMinutes: 0, rawMinutes: null }];
     }
     const closed = day.sessions.every((session) => session.end);
-    const rawMinutes = closed && day.sessions.length
-      ? day.sessions.reduce((sum, session) => sum + clockToMinutes(session.end!) - clockToMinutes(session.start), 0)
-      : null;
+    const rawMinutes =
+      closed && day.sessions.length
+        ? day.sessions.reduce((sum, session) => sum + clockToMinutes(session.end!) - clockToMinutes(session.start), 0)
+        : null;
     const correction = day.correction
       ? {
-          status: hrCorrectionStatus(day.correction.id, day.correction.status),
-          href: `/hr/reviews/${day.correction.id}`,
-          label: day.correction.status === "APPROVED" ? "Approved correction" : "Correction open",
-        }
+        status: hrCorrectionStatus(day.correction.id, day.correction.status),
+        href: `/hr/reviews/${day.correction.id}`,
+        label: day.correction.status === "APPROVED" ? "Approved correction" : "Correction open",
+      }
       : undefined;
     const state: DtrDayVM["state"] =
       day.kind === "complete" ? "credited" : day.kind === "open" ? "open" : day.kind === "incomplete" ? "pending" : "none";
@@ -373,14 +424,16 @@ function dtrDays(internId: string, from: string, to: string): DtrDayVM[] {
 }
 
 export async function getDtrReport(params: Record<string, string | undefined>): Promise<DtrPageVM> {
-  // TODO(module): src/modules/reports buildDtr (same calculation engine as the dashboard).
-  const parsed = parseDtrScope(params, { todayIso: SNAPSHOT_TODAY, defaultInternId: "ana-reyes" });
+  if (!useFixtures()) {
+    return liveBuildDtrPage(params);
+  }
+  const normalizedParams = { ...params, subject: params.subject ?? params.intern };
+  const parsed = parseDtrScope(normalizedParams, { todayIso: SNAPSHOT_TODAY, defaultInternId: "ana-reyes" });
   const reportable = INTERN_ROWS.filter((row) => row.tab !== "pending");
   const subject = parsed.scope.subject;
   const known =
     subject.kind === "intern" ? reportable.some((row) => row.id === subject.id) : DEPARTMENTS.includes(subject.name);
   const scope = known ? parsed.scope : { ...parsed.scope, subject: { kind: "intern" as const, id: "ana-reyes" } };
-  // A bad custom range keeps the form as typed but previews the default period.
   const range = parsed.error ? defaultPeriod(SNAPSHOT_TODAY) : { from: scope.from, to: scope.to };
   const workdays = workdaysBetween(range.from, range.to);
   const subtitleTail = `${DTR_POLICY_LABEL} · Asia/Manila · preview generated today, ${SNAPSHOT_NOW}`;
@@ -455,7 +508,9 @@ export async function getDtrReport(params: Record<string, string | undefined>): 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export async function getOfficeSetup(): Promise<OfficeSetupVM> {
-  // TODO(module): src/modules/offices getOfficeSettings, listCheckpoints; policies from src/modules/attendance.
+  if (!useFixtures()) {
+    return liveGetOfficeSetup();
+  }
   return {
     office: OFFICE,
     activePolicy: POLICY_VERSIONS.find((version) => version.state === "ACTIVE")!,
@@ -465,7 +520,9 @@ export async function getOfficeSetup(): Promise<OfficeSetupVM> {
 }
 
 export async function getPolicies(version?: number): Promise<PoliciesVM> {
-  // TODO(module): src/modules/attendance listPolicyVersions.
+  if (!useFixtures()) {
+    return liveListPolicyVersions(version);
+  }
   const fallback = POLICY_VERSIONS.find((candidate) => candidate.state === "DRAFT") ?? POLICY_VERSIONS[0]!;
   const selected = POLICY_VERSIONS.find((candidate) => candidate.version === version) ?? fallback;
   return {
@@ -477,14 +534,24 @@ export async function getPolicies(version?: number): Promise<PoliciesVM> {
 }
 
 export async function getDepartments(): Promise<DepartmentRowVM[]> {
-  // TODO(module): src/modules/accounts listDepartments with intern counts.
+  if (!useFixtures()) {
+    return liveListDepartments();
+  }
   return DEPARTMENT_ROWS;
 }
 
 const AUDIT_CATEGORIES: AuditCategory[] = ["office", "qr", "policy", "accounts", "corrections", "attendance"];
 
-export async function getAuditLog(filters: { query?: string; who?: string; category?: string }): Promise<AuditLogVM> {
-  // TODO(module): src/modules/audit listEntries (append-only, newest first, paged).
+export async function getAuditLog(filters: {
+  query?: string;
+  who?: string;
+  category?: string;
+  from?: string;
+  to?: string;
+}): Promise<AuditLogVM> {
+  if (!useFixtures()) {
+    return liveListAuditEntries(filters);
+  }
   const query = (filters.query ?? "").trim();
   const who = filters.who === "hr" || filters.who === "system" ? filters.who : "anyone";
   const category = AUDIT_CATEGORIES.includes(filters.category as AuditCategory) ? (filters.category as AuditCategory) : "all";
@@ -510,9 +577,10 @@ export async function getAuditLog(filters: { query?: string; who?: string; categ
   };
 }
 
-/** An active checkpoint and the value its printed code carries; null if missing or revoked. */
 export async function getCheckpointPrint(id: string): Promise<{ checkpoint: CheckpointVM; token: string; officeName: string } | null> {
-  // TODO(module): src/modules/offices issueCheckpointToken (signed with src/lib/qr/signer).
+  if (!useFixtures()) {
+    return liveIssueCheckpointToken(id);
+  }
   const checkpoint = CHECKPOINTS.find((candidate) => candidate.id === id);
   if (!checkpoint || (checkpoint.status.type === "checkpoint" && checkpoint.status.value === "REVOKED")) return null;
   return { checkpoint, token: DEV_PRINT_TOKENS[checkpoint.action], officeName: OFFICE.name };

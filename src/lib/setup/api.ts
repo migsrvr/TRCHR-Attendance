@@ -1,18 +1,33 @@
 /**
- * Client-side Setup actions for HR: office settings, QR rotation, policy
- * drafts, departments. Routes and error codes are proposed here; the server
- * must match. Every change is written to the audit log server-side.
+ * Client-side Setup actions for HR (harmonized under /api/v1/hr/*).
+ * Every change is written to the audit log server-side.
  */
 
 import type { PolicyRules } from "@/lib/ui/policy";
 
 export type ApiResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
+export interface SaveOfficeInput {
+  officeId?: string;
+  expectedConfigVersion?: number;
+  radiusM: number;
+  maxAccuracyM: number;
+  latitude?: number;
+  longitude?: number;
+  timezone?: string;
+}
+
 export interface SetupApi {
-  saveOffice(input: { radiusM: number; maxAccuracyM: number }): Promise<ApiResult<{ settingsVersion: number }>>;
-  rotateCheckpoint(checkpointId: string): Promise<ApiResult<{ codeVersion: number }>>;
-  savePolicyDraft(input: { version: number; fromIso: string; rules: PolicyRules }): Promise<ApiResult<{ savedAt: string }>>;
-  publishPolicy(version: number): Promise<ApiResult<{ version: number }>>;
+  saveOffice(input: SaveOfficeInput): Promise<ApiResult<{ settingsVersion: number }>>;
+  rotateCheckpoint(checkpointId: string, options?: { expiresInDays?: number }): Promise<ApiResult<{ codeVersion: number }>>;
+  createPolicyDraft(officeId?: string, fromVersion?: number): Promise<ApiResult<{ version: number }>>;
+  savePolicyDraft(input: {
+    officeId?: string;
+    version: number;
+    fromIso: string;
+    rules: PolicyRules;
+  }): Promise<ApiResult<{ savedAt: string }>>;
+  publishPolicy(version: number, officeId?: string): Promise<ApiResult<{ version: number }>>;
   addDepartment(name: string): Promise<ApiResult<{ id: string }>>;
   renameDepartment(id: string, name: string): Promise<ApiResult<{ id: string }>>;
   setDepartmentActive(id: string, active: boolean): Promise<ApiResult<{ active: boolean }>>;
@@ -24,6 +39,7 @@ const MESSAGES: Record<string, string> = {
   NAME_TAKEN: "A department already has that name. Names must be unique.",
   VERSION_LOCKED: "That version is in use, so it's locked. Start a new draft instead.",
   START_IN_PAST: "A new version can't start before tomorrow. Pick a later date.",
+  STALE_VERSION: "Settings were updated by someone else. Refresh the page and try again.",
   FORBIDDEN: "Only HR can change setup. Sign in with an HR account.",
 };
 
@@ -34,10 +50,10 @@ export function setupErrorMessage(status: number, body: unknown): string {
   return GENERIC;
 }
 
-async function send<T>(url: string, body: unknown): Promise<ApiResult<T>> {
+async function send<T>(url: string, body: unknown, method: "POST" | "PATCH" = "POST"): Promise<ApiResult<T>> {
   try {
     const response = await fetch(url, {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
       cache: "no-store",
@@ -50,19 +66,26 @@ async function send<T>(url: string, body: unknown): Promise<ApiResult<T>> {
   }
 }
 
-export function createHttpSetupApi(base = "/api/v1"): SetupApi {
+export function createHttpSetupApi(base = "/api/v1/hr"): SetupApi {
   return {
-    saveOffice: (input) => send(`${base}/office`, input),
-    rotateCheckpoint: (id) => send(`${base}/checkpoints/${encodeURIComponent(id)}/rotate`, {}),
-    savePolicyDraft: (input) => send(`${base}/policies/${input.version}`, input),
-    publishPolicy: (version) => send(`${base}/policies/${version}/publish`, {}),
-    addDepartment: (name) => send(`${base}/departments`, { name }),
-    renameDepartment: (id, name) => send(`${base}/departments/${encodeURIComponent(id)}`, { name }),
-    setDepartmentActive: (id, active) => send(`${base}/departments/${encodeURIComponent(id)}/status`, { active }),
+    saveOffice: ({ officeId = "default", ...payload }) =>
+      send(`${base}/offices/${encodeURIComponent(officeId)}`, payload, "PATCH"),
+    rotateCheckpoint: (id, options = {}) =>
+      send(`${base}/checkpoints/${encodeURIComponent(id)}/rotate`, options, "POST"),
+    createPolicyDraft: (officeId = "default", fromVersion) =>
+      send(`${base}/offices/${encodeURIComponent(officeId)}/policies`, fromVersion ? { fromVersion } : {}, "POST"),
+    savePolicyDraft: ({ officeId = "default", version, fromIso, rules }) =>
+      send(`${base}/offices/${encodeURIComponent(officeId)}/policies/${version}`, { fromIso, rules }, "PATCH"),
+    publishPolicy: (version, officeId = "default") =>
+      send(`${base}/offices/${encodeURIComponent(officeId)}/policies/${version}/publish`, {}, "POST"),
+    addDepartment: (name) => send(`${base}/departments`, { name }, "POST"),
+    renameDepartment: (id, name) => send(`${base}/departments/${encodeURIComponent(id)}`, { name }, "PATCH"),
+    setDepartmentActive: (id, active) =>
+      send(`${base}/departments/${encodeURIComponent(id)}/status`, { active }, "POST"),
   };
 }
 
-/** Development stand-in. `existingNames` makes duplicate department names fail like the server would. */
+/** Development stand-in when USE_MOCK_APIS=1. */
 export function createMockSetupApi(options: { delayMs?: number; existingNames?: string[] } = {}): SetupApi {
   const { delayMs = 600 } = options;
   const names = new Set((options.existingNames ?? []).map((name) => name.toLowerCase()));
@@ -76,6 +99,10 @@ export function createMockSetupApi(options: { delayMs?: number; existingNames?: 
     async rotateCheckpoint() {
       await wait();
       return { ok: true, value: { codeVersion: 3 } };
+    },
+    async createPolicyDraft(_officeId, fromVersion) {
+      await wait();
+      return { ok: true, value: { version: (fromVersion ?? 2) + 1 } };
     },
     async savePolicyDraft() {
       await wait();

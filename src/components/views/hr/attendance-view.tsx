@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { DayTimeline, sessionSummary } from "@/components/attendance/day-timeline";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit-select";
-import { ButtonLink } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusMark } from "@/components/ui/status-mark";
@@ -28,6 +28,8 @@ function attendanceHref(data: AttendanceVM, session?: string) {
   if (data.query) search.set("q", data.query);
   if (data.department) search.set("department", data.department);
   if (data.status !== "all") search.set("status", data.status);
+  if (data.from) search.set("from", data.from);
+  if (data.to) search.set("to", data.to);
   if (session) search.set("session", session);
   const qs = search.toString();
   return `/hr/attendance${qs ? `?${qs}` : ""}${session ? "#session-detail" : ""}`;
@@ -249,13 +251,13 @@ function SessionPanel({ detail, data, mock }: { detail: SessionDetailVM; data: A
 }
 
 export function AttendanceView({ data, mock }: { data: AttendanceVM; mock: boolean }) {
-  const filtered = Boolean(data.query || data.department || data.status !== "all");
+  const filtered = Boolean(data.query || data.department || data.status !== "all" || data.from || data.to);
 
   return (
     <>
       <PageHeader
         title="Attendance records"
-        subtitle={`Every session, grouped by office day · ${data.periodLabel} · times in Asia/Manila`}
+        subtitle={`Every session, grouped by office day · ${data.periodLabel} · times in ${data.timeZone ?? "Asia/Manila"}`}
         actions={
           <ButtonLink href="/hr/reports" variant="outline">
             <FileDown aria-hidden="true" />
@@ -290,6 +292,31 @@ export function AttendanceView({ data, mock }: { data: AttendanceVM; mock: boole
             Status
           </label>
           <AutoSubmitSelect id="attendance-filter-status" name="status" value={data.status === "all" ? "" : data.status} options={STATUS_OPTIONS} />
+          <label htmlFor="attendance-filter-from" className="sr-only">
+            From date
+          </label>
+          <input
+            id="attendance-filter-from"
+            type="date"
+            name="from"
+            defaultValue={data.from ?? ""}
+            aria-label="From date"
+            className="h-9 rounded-btn border border-border bg-card px-2.5 font-mono text-xs text-foreground"
+          />
+          <label htmlFor="attendance-filter-to" className="sr-only">
+            To date
+          </label>
+          <input
+            id="attendance-filter-to"
+            type="date"
+            name="to"
+            defaultValue={data.to ?? ""}
+            aria-label="To date"
+            className="h-9 rounded-btn border border-border bg-card px-2.5 font-mono text-xs text-foreground"
+          />
+          <Button type="submit" variant="outline" size="sm">
+            Apply
+          </Button>
         </form>
         <Legend />
       </div>

@@ -7,6 +7,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatusMark } from "@/components/ui/status-mark";
 import { AccountActions } from "@/components/views/hr/account-actions";
+import { EditInternDialog } from "@/components/views/hr/edit-intern-dialog";
 import { ProfileTabs } from "@/components/views/hr/profile-tabs";
 import { reasonLabel } from "@/lib/ui/correction-form";
 import { formatDuration, formatShortDate } from "@/lib/ui/format";
@@ -164,7 +165,7 @@ export function InternProfileView({ data, mock }: { data: InternProfileVM; mock:
             </p>
           </div>
         </div>
-        <ButtonLink href={`/hr/reports?intern=${data.id}`} variant="outline">
+        <ButtonLink href={`/hr/reports?subject=${encodeURIComponent(data.id)}`} variant="outline">
           <FileText aria-hidden="true" />
           Generate DTR
         </ButtonLink>
@@ -211,7 +212,11 @@ export function InternProfileView({ data, mock }: { data: InternProfileVM; mock:
           ) : null}
 
           <Card labelledBy="profile-internship-title">
-            <CardHeader id="profile-internship-title" title="Internship" />
+            <CardHeader
+              id="profile-internship-title"
+              title="Internship"
+              action={<EditInternDialog data={data} mock={mock} />}
+            />
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 px-5 pb-4 text-[13px] leading-[18px]">
               <dt className="text-muted-foreground">Department</dt>
               <dd>

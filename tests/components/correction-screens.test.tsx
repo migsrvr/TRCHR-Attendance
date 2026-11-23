@@ -49,7 +49,7 @@ describe("CorrectionDetailView", () => {
     expect(html).toContain("HR asked for more info");
     expect(html.indexOf("I forgot to scan OUT")).toBeLessThan(html.indexOf("Which meeting was this"));
     expect(html).toContain('for="reply"');
-    expect(html).toContain('href="/corrections/new?date=2026-10-15"');
+    expect(html).toContain('href="/corrections/new?date=2026-10-15&amp;replace=corr-oct15"');
   });
 
   it("shows the outcome and no reply box once decided", async () => {

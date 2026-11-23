@@ -21,6 +21,8 @@ export default async function HrReviewsPage({ searchParams }: { searchParams: Se
       query: single("q"),
       department: single("department"),
       jev: single("jev") as ReviewQueueVM["jev"] | undefined,
+      from: single("from"),
+      to: single("to"),
     }),
   ]);
 

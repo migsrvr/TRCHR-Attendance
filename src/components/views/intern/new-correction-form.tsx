@@ -99,6 +99,8 @@ export function NewCorrectionForm({ data, mock }: { data: NewCorrectionVM; mock:
       explanation: explanation.trim(),
       proposedTimeIn: result.proposal.timeIn,
       proposedTimeOut: result.proposal.timeOut,
+      ...(recorded?.sessionId ? { sessionId: recorded.sessionId } : {}),
+      ...(data.replaceRequestId ? { replaceRequestId: data.replaceRequestId } : {}),
     });
     if (response.ok) {
       setSentProposal(result.proposal);
@@ -154,6 +156,12 @@ export function NewCorrectionForm({ data, mock }: { data: NewCorrectionVM; mock:
           HR reviews every request. Proposed times add no hours until approved.
         </p>
       </div>
+
+      {data.replaceRequestId ? (
+        <p className="rounded-btn border border-pend/30 bg-pend-bg px-3.5 py-2.5 text-[13px] leading-[19px] text-pend">
+          Submitting replaces your current open request for this day.
+        </p>
+      ) : null}
 
       {Object.keys(errors).length > 0 ? (
         <p role="alert" className="rounded-btn bg-attn-bg px-3.5 py-2.5 text-[13px] font-medium leading-[19px] text-attn">

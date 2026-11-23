@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 
 import { AuthFrame } from "@/components/shell/auth-frame";
 import { SignInForm } from "@/components/views/auth/sign-in-form";
+import { isMockModeEnabled } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
   title: "Sign in · Top Realty Attendance",
@@ -20,7 +21,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
 
   return (
     <AuthFrame variant="brand">
-      <SignInForm mock={process.env.NODE_ENV !== "production"} next={next} />
+      <SignInForm mock={isMockModeEnabled()} next={next} />
     </AuthFrame>
   );
 }

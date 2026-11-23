@@ -26,12 +26,14 @@ const FIELD_ID: Record<keyof NewInternDraft, string> = {
  */
 export function AddInternDialog({
   departments,
+  departmentOptions,
   officeLabel,
   defaultRequiredMinutes,
   mock,
   openOnLoad = false,
 }: {
   departments: string[];
+  departmentOptions?: { id: string; name: string }[];
   officeLabel: string;
   defaultRequiredMinutes: number;
   mock: boolean;
@@ -102,10 +104,12 @@ export function AddInternDialog({
     }
     setServerError(null);
     setSending(true);
+    const departmentId = departmentOptions?.find((option) => option.name === draft.department)?.id;
     const result = await api.createIntern({
       clientRequestId: requestId,
       name: draft.name.trim(),
       email: draft.email.trim(),
+      ...(departmentId ? { departmentId } : {}),
       department: draft.department,
       requiredMinutes: Number(draft.requiredHours) * 60,
       startDate: draft.startDate,

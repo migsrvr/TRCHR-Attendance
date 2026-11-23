@@ -45,7 +45,7 @@ function InternRow({ row, mock }: { row: InternListRowVM; mock: boolean }) {
     ? []
     : [
         { href: `/hr/interns/${row.id}`, label: "View profile" },
-        { href: `/hr/reports?intern=${row.id}`, label: "Generate DTR" },
+        { href: `/hr/reports?subject=${encodeURIComponent(row.id)}`, label: "Generate DTR" },
       ];
 
   return (
@@ -129,6 +129,7 @@ export function InternsView({ data, mock, openAdd = false }: { data: InternListV
         actions={
           <AddInternDialog
             departments={data.departments}
+            departmentOptions={data.departmentOptions}
             officeLabel={data.officeLabel}
             defaultRequiredMinutes={data.defaultRequiredMinutes}
             mock={mock}

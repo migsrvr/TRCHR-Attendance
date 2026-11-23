@@ -15,7 +15,13 @@ export default async function HrAuditLogPage({ searchParams }: { searchParams: S
   const single = (key: string) => (typeof params[key] === "string" ? (params[key] as string) : undefined);
   const [shell, data] = await Promise.all([
     getHrShell(),
-    getAuditLog({ query: single("q"), who: single("who"), category: single("category") }),
+    getAuditLog({
+      query: single("q"),
+      who: single("who"),
+      category: single("category"),
+      from: single("from"),
+      to: single("to"),
+    }),
   ]);
   return (
     <HrShell shell={shell} active="audit" title="Audit log">

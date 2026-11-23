@@ -1,9 +1,9 @@
 /**
  * Deterministic calculation engine - type definitions.
  *
- * The engine converts effective (COMPLETE) attendance intervals and a pinned
- * policy version into integer credited minutes. It performs no I/O and no AI
- * calls. See Technical Design v1.0 section 7.
+ * Converts effective (COMPLETE) attendance intervals and a pinned policy
+ * version into integer credited minutes. Performs no I/O and no AI calls.
+ * See Technical Design v1.0 section 7.
  */
 
 /** A fully bounded work interval, in UTC. */
@@ -12,7 +12,7 @@ export interface AttendanceInterval {
   readonly timeOutUtc: Date;
 }
 
-export type RoundingMode = "FLOOR" | "CEIL" | "NEAREST_HALF_UP";
+export type RoundingMode = "NONE" | "FLOOR" | "CEIL" | "NEAREST_HALF_UP";
 
 /** A daily allowed schedule window expressed in office-local minutes from midnight. */
 export interface ScheduleWindow {
@@ -25,6 +25,8 @@ export interface BreakRule {
   readonly requiredBreakMinutes: number;
   readonly windowStartMinutes: number;
   readonly windowEndMinutes: number;
+  /** Defaults to true: gaps between recorded sessions inside the window count toward the break. */
+  readonly gapCountsTowardBreak?: boolean;
 }
 
 /** Day-level cap and rounding configuration. */
@@ -37,16 +39,28 @@ export interface CreditRules {
 /** An immutable, validated policy version pinned to a session. */
 export interface AttendancePolicy {
   readonly version: number;
+  readonly workdays?: readonly number[];
   readonly scheduleRules: readonly ScheduleWindow[];
   readonly breakRules: readonly BreakRule[];
   readonly creditRules: CreditRules;
 }
 
+export interface CalculationContext {
+  /** Office-local YYYY-MM-DD date; inferred from first interval if omitted. */
+  readonly attendanceDate?: string;
+  /** Office IANA time zone (e.g. "Asia/Manila"). Defaults to "UTC" if omitted. */
+  readonly timeZone?: string;
+}
+
 /** Result of one day-level calculation. */
 export interface DailyCreditResult {
   readonly recordedMinutes: number;
+  readonly insideMinutes: number;
+  readonly gapInWindowMinutes: number;
   readonly appliedBreakDeductionMinutes: number;
+  readonly beforeRoundingMinutes: number;
   readonly capped: boolean;
+  readonly clipped: boolean;
   readonly creditedMinutes: number;
 }
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { InternShell } from "@/components/shell/intern-shell";
 import { CorrectionDetailView } from "@/components/views/intern/correction-detail-view";
+import { isMockModeEnabled } from "@/lib/auth/session";
 import { getCorrectionDetail } from "@/lib/ui/queries/intern";
 
 export const metadata: Metadata = {
@@ -16,7 +17,7 @@ export default async function CorrectionDetailPage({ params }: { params: Promise
 
   return (
     <InternShell initials={data.identity.initials} showTabs={false} back={{ href: "/corrections", label: "Corrections" }}>
-      <CorrectionDetailView data={data} mock={process.env.NODE_ENV !== "production"} />
+      <CorrectionDetailView data={data} mock={isMockModeEnabled()} />
     </InternShell>
   );
 }

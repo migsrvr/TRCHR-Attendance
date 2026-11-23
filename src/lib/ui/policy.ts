@@ -1,13 +1,13 @@
 /**
- * Attendance policy rules and a preview of how they credit one day. The
- * calculation engine (src/modules/attendance) is the source of truth; this
- * mirrors it for the policy editor's worked example and is tested against
- * the same sample days.
- *
- * Order: clip each session to the schedule, deduct the break once (a gap
- * between sessions inside the break window counts toward it), cap, round.
+ * Attendance policy rules and a preview of how they credit one day.
+ * Delegates directly to the canonical deterministic calculation engine
+ * (src/domain/calculation/engine.ts) so the policy editor, dashboards, and DTR
+ * exports always produce identical results.
  */
 
+import { calculateDailyCredit } from "@/domain/calculation/engine";
+import type { AttendancePolicy } from "@/domain/calculation/types";
+import { uiRoundingToCreditRounding } from "@/domain/policy/schemas";
 import { clockToMinutes } from "@/lib/ui/timeline";
 
 export type Rounding = "none" | "down5" | "down15" | "nearest15";
@@ -31,7 +31,8 @@ export const ROUNDING_OPTIONS: { value: Rounding; label: string }[] = [
   { value: "nearest15", label: "Nearest 15 minutes" },
 ];
 
-export const roundingLabel = (rounding: Rounding) => ROUNDING_OPTIONS.find((option) => option.value === rounding)!.label;
+export const roundingLabel = (rounding: Rounding) =>
+  ROUNDING_OPTIONS.find((option) => option.value === rounding)!.label;
 
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -57,38 +58,69 @@ export interface DayCredit {
   clipped: boolean;
 }
 
-function round(minutes: number, rounding: Rounding): number {
-  switch (rounding) {
-    case "down5":
-      return Math.floor(minutes / 5) * 5;
-    case "down15":
-      return Math.floor(minutes / 15) * 15;
-    case "nearest15":
-      return Math.round(minutes / 15) * 15;
-    default:
-      return minutes;
-  }
+export function policyRulesToAttendancePolicy(rules: PolicyRules, version = 1): AttendancePolicy {
+  const { roundingMode, roundingUnitMinutes } = uiRoundingToCreditRounding(rules.rounding);
+  return {
+    version,
+    workdays: rules.workdays,
+    scheduleRules: [{ startMinutes: clockToMinutes(rules.start), endMinutes: clockToMinutes(rules.end) }],
+    breakRules:
+      rules.breakMinutes > 0
+        ? [
+            {
+              requiredBreakMinutes: rules.breakMinutes,
+              windowStartMinutes: clockToMinutes(rules.breakWindow.start),
+              windowEndMinutes: clockToMinutes(rules.breakWindow.end),
+              gapCountsTowardBreak: rules.gapCountsTowardBreak,
+            },
+          ]
+        : [],
+    creditRules: {
+      roundingMode,
+      roundingUnitMinutes,
+      dailyCapMinutes: rules.capMinutes,
+    },
+  };
 }
 
-const overlap = (a: [number, number], b: [number, number]) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]));
-
 export function creditDay(sessions: { start: string; end: string }[], rules: PolicyRules): DayCredit {
-  const schedule: [number, number] = [clockToMinutes(rules.start), clockToMinutes(rules.end)];
-  const window: [number, number] = [clockToMinutes(rules.breakWindow.start), clockToMinutes(rules.breakWindow.end)];
-  const spans = sessions
-    .map((session) => [clockToMinutes(session.start), clockToMinutes(session.end)] as [number, number])
-    .sort((a, b) => a[0] - b[0]);
+  const referenceDate = "2026-10-19";
+  const intervals = sessions.map((session) => ({
+    timeInUtc: new Date(`${referenceDate}T${session.start}:00Z`),
+    timeOutUtc: new Date(`${referenceDate}T${session.end}:00Z`),
+  }));
 
-  const inside = spans.reduce((sum, span) => sum + overlap(span, schedule), 0);
-  const clipped = spans.reduce((sum, span) => sum + span[1] - span[0], 0) > inside;
-  const gapInWindow = rules.gapCountsTowardBreak
-    ? spans.slice(1).reduce((sum, span, index) => sum + overlap([spans[index]![1], span[0]], window), 0)
-    : 0;
-  const breakOwed = inside > 0 ? Math.max(0, rules.breakMinutes - gapInWindow) : 0;
-  const afterBreak = Math.max(0, inside - breakOwed);
-  const capped = afterBreak > rules.capMinutes;
-  const beforeRounding = Math.min(afterBreak, rules.capMinutes);
-  return { inside, gapInWindow, breakOwed, beforeRounding, credited: round(beforeRounding, rules.rounding), capped, clipped };
+  const policy = policyRulesToAttendancePolicy(rules);
+  const effectiveUnit = policy.creditRules.roundingMode === "NONE" ? 1 : policy.creditRules.roundingUnitMinutes;
+  // Guard preview while user is mid-edit with a temporary cap not divisible by unit
+  const safePolicy: AttendancePolicy =
+    policy.creditRules.dailyCapMinutes > 0 && policy.creditRules.dailyCapMinutes % effectiveUnit === 0
+      ? policy
+      : {
+          ...policy,
+          creditRules: {
+            ...policy.creditRules,
+            dailyCapMinutes: Math.max(
+              effectiveUnit,
+              Math.floor(Math.max(rules.capMinutes, 0) / effectiveUnit) * effectiveUnit,
+            ),
+          },
+        };
+
+  const result = calculateDailyCredit(intervals, safePolicy, {
+    attendanceDate: referenceDate,
+    timeZone: "UTC",
+  });
+
+  return {
+    inside: result.insideMinutes,
+    gapInWindow: result.gapInWindowMinutes,
+    breakOwed: result.appliedBreakDeductionMinutes,
+    beforeRounding: result.beforeRoundingMinutes,
+    credited: result.creditedMinutes,
+    capped: result.capped,
+    clipped: result.clipped,
+  };
 }
 
 /** "8h 00m", "7h30m", "8" (hours) → minutes; null if unreadable. */
@@ -100,7 +132,9 @@ export function parseDuration(text: string): number | null {
   return null;
 }
 
-export type PolicyErrors = Partial<Record<"workdays" | "schedule" | "breakMinutes" | "breakWindow" | "capMinutes", string>>;
+export type PolicyErrors = Partial<
+  Record<"workdays" | "schedule" | "breakMinutes" | "breakWindow" | "capMinutes", string>
+>;
 
 export function validatePolicy(rules: PolicyRules): PolicyErrors {
   const errors: PolicyErrors = {};
@@ -115,11 +149,25 @@ export function validatePolicy(rules: PolicyRules): PolicyErrors {
   }
   if (!Number.isInteger(rules.capMinutes) || rules.capMinutes <= 0 || rules.capMinutes > 24 * 60) {
     errors.capMinutes = "Enter a daily cap like 8h 00m.";
+  } else {
+    const { roundingMode, roundingUnitMinutes } = uiRoundingToCreditRounding(rules.rounding);
+    if (roundingMode !== "NONE" && rules.capMinutes % roundingUnitMinutes !== 0) {
+      errors.capMinutes = `Daily cap must be a multiple of ${roundingUnitMinutes} minutes for this rounding setting.`;
+    }
   }
   return errors;
 }
 
-const FIELDS: (keyof PolicyRules)[] = ["workdays", "start", "end", "breakMinutes", "breakWindow", "gapCountsTowardBreak", "capMinutes", "rounding"];
+const FIELDS: (keyof PolicyRules)[] = [
+  "workdays",
+  "start",
+  "end",
+  "breakMinutes",
+  "breakWindow",
+  "gapCountsTowardBreak",
+  "capMinutes",
+  "rounding",
+];
 
 export function changedFields(base: PolicyRules, draft: PolicyRules): (keyof PolicyRules)[] {
   return FIELDS.filter((field) => JSON.stringify(base[field]) !== JSON.stringify(draft[field]));

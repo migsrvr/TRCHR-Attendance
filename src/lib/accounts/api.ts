@@ -1,10 +1,5 @@
 /**
- * Client-side accounts API for HR: create an intern (account + internship +
- * setup link), resend the link, sign out every device, disable or enable.
- *
- * The routes don't exist yet; paths and error codes here are the proposal
- * the routes must match. `clientRequestId` makes a resend after a dropped
- * connection return the same intern instead of a duplicate.
+ * Client-side accounts API for HR (harmonized under /api/v1/hr/interns/*).
  */
 
 import { newId } from "@/lib/ui/id";
@@ -13,16 +8,26 @@ export interface CreateInternRequest {
   clientRequestId: string;
   name: string;
   email: string;
+  departmentId?: string;
   department: string;
   requiredMinutes: number;
   startDate: string;
   endDate: string | null;
 }
 
+export interface UpdateInternRequest {
+  expectedAttendanceVersion?: number;
+  departmentId?: string;
+  requiredMinutes?: number;
+  endDate?: string | null;
+  status?: "ACTIVE" | "COMPLETED" | "CANCELLED";
+}
+
 export type ApiResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
 export interface AccountsApi {
   createIntern(request: CreateInternRequest): Promise<ApiResult<{ id: string }>>;
+  updateIntern(internId: string, request: UpdateInternRequest): Promise<ApiResult<{ internshipId: string; attendanceVersion: number }>>;
   resendSetupLink(internId: string): Promise<ApiResult<{ sentAtUtc: string }>>;
   signOutEverywhere(internId: string): Promise<ApiResult<{ sessionsEnded: number }>>;
   setDisabled(internId: string, disabled: boolean): Promise<ApiResult<{ status: "ACTIVE" | "DISABLED" }>>;
@@ -33,6 +38,7 @@ const GENERIC = "Couldn't save. Check your connection and try again.";
 const MESSAGES: Record<string, string> = {
   EMAIL_TAKEN: "That email already has an account. Search the directory for it instead.",
   DEPARTMENT_INACTIVE: "That department is turned off. Choose another or reactivate it in Departments.",
+  STALE_VERSION: "This intern's record changed. Refresh the page and try again.",
   FORBIDDEN: "Only HR can do this. Sign in with an HR account.",
   UNAUTHENTICATED: "You've been signed out. Sign in again, then try again.",
 };
@@ -47,10 +53,10 @@ export function accountErrorMessage(status: number, body: unknown): string {
   return GENERIC;
 }
 
-async function send<T>(url: string, body: unknown): Promise<ApiResult<T>> {
+async function send<T>(url: string, body: unknown, method: "POST" | "PATCH" = "POST"): Promise<ApiResult<T>> {
   try {
     const response = await fetch(url, {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
       cache: "no-store",
@@ -63,13 +69,14 @@ async function send<T>(url: string, body: unknown): Promise<ApiResult<T>> {
   }
 }
 
-export function createHttpAccountsApi(base = "/api/v1"): AccountsApi {
+export function createHttpAccountsApi(base = "/api/v1/hr"): AccountsApi {
   const intern = (id: string) => `${base}/interns/${encodeURIComponent(id)}`;
   return {
-    createIntern: (request) => send(`${base}/interns`, request),
-    resendSetupLink: (id) => send(`${intern(id)}/setup-link`, {}),
-    signOutEverywhere: (id) => send(`${intern(id)}/sessions/revoke`, {}),
-    setDisabled: (id, disabled) => send(`${intern(id)}/status`, { status: disabled ? "DISABLED" : "ACTIVE" }),
+    createIntern: (request) => send(`${base}/interns`, request, "POST"),
+    updateIntern: (id, request) => send(intern(id), request, "PATCH"),
+    resendSetupLink: (id) => send(`${intern(id)}/setup-link`, {}, "POST"),
+    signOutEverywhere: (id) => send(`${intern(id)}/sessions/revoke`, {}, "POST"),
+    setDisabled: (id, disabled) => send(`${intern(id)}/status`, { status: disabled ? "DISABLED" : "ACTIVE" }, "POST"),
   };
 }
 
@@ -88,6 +95,10 @@ export function createMockAccountsApi(options: { delayMs?: number } = {}): Accou
       const value = created.get(request.clientRequestId) ?? { id: newId() };
       created.set(request.clientRequestId, value);
       return { ok: true, value };
+    },
+    async updateIntern(_id, request) {
+      await wait();
+      return { ok: true, value: { internshipId: newId(), attendanceVersion: (request.expectedAttendanceVersion ?? 1) + 1 } };
     },
     async resendSetupLink() {
       await wait();

@@ -8,12 +8,39 @@ import { createHttpSetupApi, createMockSetupApi } from "@/lib/setup/api";
 import type { OfficeSetupVM } from "@/lib/ui/view-models";
 
 const INPUT = "h-9 w-24 rounded-btn border border-border bg-card px-3 font-mono text-sm text-foreground aria-[invalid=true]:border-attn";
+const WIDE_INPUT = "h-9 w-full rounded-btn border border-border bg-card px-3 font-mono text-sm text-foreground aria-[invalid=true]:border-attn";
 
-function validate(radius: number, accuracy: number): { radius?: string; accuracy?: string } {
-  const errors: { radius?: string; accuracy?: string } = {};
+interface OfficeFormErrors {
+  radius?: string;
+  accuracy?: string;
+  latitude?: string;
+  longitude?: string;
+  timezone?: string;
+}
+
+function validate(
+  radius: number,
+  accuracy: number,
+  latitudeText: string,
+  longitudeText: string,
+  timezone: string,
+): OfficeFormErrors {
+  const errors: OfficeFormErrors = {};
   if (!Number.isInteger(radius) || radius < 10 || radius > 500) errors.radius = "Use 10 to 500 metres.";
   if (!Number.isInteger(accuracy) || accuracy < 5 || accuracy > 100) errors.accuracy = "Use 5 to 100 metres.";
   else if (!errors.radius && accuracy >= radius) errors.accuracy = "Must be smaller than the radius, or no scan could pass.";
+
+  if (latitudeText.trim() !== "") {
+    const lat = Number(latitudeText);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) errors.latitude = "Use a latitude between -90 and 90.";
+  }
+  if (longitudeText.trim() !== "") {
+    const lng = Number(longitudeText);
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) errors.longitude = "Use a longitude between -180 and 180.";
+  }
+  if (!timezone.trim()) {
+    errors.timezone = "Enter a valid IANA time zone (for example, Asia/Manila).";
+  }
   return errors;
 }
 
@@ -38,25 +65,60 @@ function GeofencePreview({ radius, accuracy }: { radius: number; accuracy: numbe
 
 export function OfficeSettingsForm({ office, mock }: { office: OfficeSetupVM["office"]; mock: boolean }) {
   const [api] = useState(() => (mock ? createMockSetupApi() : createHttpSetupApi()));
+  const initialLat = office.latitude !== undefined ? String(office.latitude) : "";
+  const initialLng = office.longitude !== undefined ? String(office.longitude) : "";
   const [radius, setRadius] = useState(String(office.radiusM));
   const [accuracy, setAccuracy] = useState(String(office.maxAccuracyM));
-  const [errors, setErrors] = useState<{ radius?: string; accuracy?: string }>({});
+  const [latitude, setLatitude] = useState(initialLat);
+  const [longitude, setLongitude] = useState(initialLng);
+  const [timezone, setTimezone] = useState(office.timeZone);
+  const [configVersion, setConfigVersion] = useState(office.settingsVersion);
+  const [errors, setErrors] = useState<OfficeFormErrors>({});
   const [state, setState] = useState<{ kind: "idle" | "saving" } | { kind: "saved"; version: number } | { kind: "error"; message: string }>({ kind: "idle" });
   const r = Number(radius);
   const a = Number(accuracy);
-  const changed = r !== office.radiusM || a !== office.maxAccuracyM;
+  const changed =
+    r !== office.radiusM ||
+    a !== office.maxAccuracyM ||
+    latitude !== initialLat ||
+    longitude !== initialLng ||
+    timezone.trim() !== office.timeZone;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const found = validate(r, a);
+    const found = validate(r, a, latitude, longitude, timezone);
     setErrors(found);
-    if (found.radius || found.accuracy) {
-      document.getElementById(found.radius ? "office-radius" : "office-accuracy")?.focus();
+    const firstField = found.radius
+      ? "office-radius"
+      : found.accuracy
+        ? "office-accuracy"
+        : found.latitude
+          ? "office-latitude"
+          : found.longitude
+            ? "office-longitude"
+            : found.timezone
+              ? "office-timezone"
+              : null;
+    if (firstField) {
+      document.getElementById(firstField)?.focus();
       return;
     }
     setState({ kind: "saving" });
-    const result = await api.saveOffice({ radiusM: r, maxAccuracyM: a });
-    setState(result.ok ? { kind: "saved", version: result.value.settingsVersion } : { kind: "error", message: result.message });
+    const result = await api.saveOffice({
+      ...(office.id ? { officeId: office.id } : {}),
+      expectedConfigVersion: configVersion,
+      radiusM: r,
+      maxAccuracyM: a,
+      ...(latitude.trim() !== "" ? { latitude: Number(latitude) } : {}),
+      ...(longitude.trim() !== "" ? { longitude: Number(longitude) } : {}),
+      ...(timezone.trim() !== office.timeZone ? { timezone: timezone.trim() } : {}),
+    });
+    if (result.ok) {
+      setConfigVersion(result.value.settingsVersion);
+      setState({ kind: "saved", version: result.value.settingsVersion });
+    } else {
+      setState({ kind: "error", message: result.message });
+    }
   }
 
   return (
@@ -97,13 +159,85 @@ export function OfficeSettingsForm({ office, mock }: { office: OfficeSetupVM["of
           ))}
         </div>
       </div>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 border-t border-hairline px-5 py-4 text-[13px] leading-[18px]">
+      <div className="grid gap-3 border-t border-hairline px-5 py-4 sm:grid-cols-3">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="office-latitude" className="text-xs font-semibold leading-4 text-muted-foreground">
+            Pin latitude
+          </label>
+          <input
+            id="office-latitude"
+            type="number"
+            step="0.000001"
+            placeholder={office.pinLabel.split(",")[0]?.trim() || "14.554700"}
+            value={latitude}
+            onChange={(event) => {
+              setLatitude(event.target.value);
+              setState({ kind: "idle" });
+            }}
+            aria-invalid={errors.latitude ? true : undefined}
+            aria-describedby={errors.latitude ? "office-latitude-error" : undefined}
+            className={WIDE_INPUT}
+          />
+          {errors.latitude ? (
+            <p id="office-latitude-error" className="text-xs font-medium text-attn">
+              {errors.latitude}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="office-longitude" className="text-xs font-semibold leading-4 text-muted-foreground">
+            Pin longitude
+          </label>
+          <input
+            id="office-longitude"
+            type="number"
+            step="0.000001"
+            placeholder={office.pinLabel.split(",")[1]?.trim() || "121.024400"}
+            value={longitude}
+            onChange={(event) => {
+              setLongitude(event.target.value);
+              setState({ kind: "idle" });
+            }}
+            aria-invalid={errors.longitude ? true : undefined}
+            aria-describedby={errors.longitude ? "office-longitude-error" : undefined}
+            className={WIDE_INPUT}
+          />
+          {errors.longitude ? (
+            <p id="office-longitude-error" className="text-xs font-medium text-attn">
+              {errors.longitude}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="office-timezone" className="text-xs font-semibold leading-4 text-muted-foreground">
+            Time zone
+          </label>
+          <input
+            id="office-timezone"
+            type="text"
+            value={timezone}
+            onChange={(event) => {
+              setTimezone(event.target.value);
+              setState({ kind: "idle" });
+            }}
+            aria-invalid={errors.timezone ? true : undefined}
+            aria-describedby={errors.timezone ? "office-timezone-error" : undefined}
+            className={WIDE_INPUT}
+          />
+          {errors.timezone ? (
+            <p id="office-timezone-error" className="text-xs font-medium text-attn">
+              {errors.timezone}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 border-t border-hairline px-5 py-3 text-[13px] leading-[18px]">
         <dt className="text-muted-foreground">Office</dt>
         <dd>{office.name}</dd>
         <dt className="text-muted-foreground">Pin</dt>
         <dd className="font-mono">{office.pinLabel}</dd>
-        <dt className="text-muted-foreground">Time zone</dt>
-        <dd>{office.timeZone}</dd>
+        <dt className="text-muted-foreground">Settings</dt>
+        <dd className="font-mono">v{configVersion}</dd>
       </dl>
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-hairline px-5 py-4">
         <p className="min-w-0 flex-1 basis-56 text-xs leading-[18px] text-muted-foreground">

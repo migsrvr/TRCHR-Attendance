@@ -30,6 +30,7 @@ export function DepartmentsView({ rows: initialRows, mock }: { rows: DepartmentR
   const [api] = useState(() => (mock ? createMockSetupApi({ existingNames: initialRows.map((row) => row.name) }) : createHttpSetupApi()));
   const [rows, setRows] = useState(initialRows);
   const [editing, setEditing] = useState<{ id: string; name: string; error: string | null } | null>(null);
+  const [deactivating, setDeactivating] = useState<DepartmentRowVM | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
@@ -56,6 +57,23 @@ export function DepartmentsView({ rows: initialRows, mock }: { rows: DepartmentR
     if (!result.ok) return setMessage(result.message);
     setRows((current) => current.map((item) => (item.id === row.id ? { ...item, status: { type: "department", value: "ACTIVE" }, inactiveSinceIso: undefined } : item)));
     setMessage(`${row.name} is active again and shows in the Add intern form.`);
+  }
+
+  async function deactivate(row: DepartmentRowVM) {
+    setBusy(row.id);
+    const result = await api.setDepartmentActive(row.id, false);
+    setBusy(null);
+    setDeactivating(null);
+    if (!result.ok) return setMessage(result.message);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    setRows((current) =>
+      current.map((item) =>
+        item.id === row.id
+          ? { ...item, status: { type: "department", value: "INACTIVE" }, inactiveSinceIso: todayIso }
+          : item,
+      ),
+    );
+    setMessage(`${row.name} deactivated. Past attendance keeps this department.`);
   }
 
   async function add(event: FormEvent<HTMLFormElement>) {
@@ -158,9 +176,14 @@ export function DepartmentsView({ rows: initialRows, mock }: { rows: DepartmentR
                       </td>
                       <td className={cn(TD, "pr-5 text-right")}>
                         {renaming ? null : active ? (
-                          <Button variant="ghost" size="sm" onClick={() => setEditing({ id: row.id, name: row.name, error: null })}>
-                            Rename
-                          </Button>
+                          <span className="inline-flex items-center gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => setEditing({ id: row.id, name: row.name, error: null })}>
+                              Rename
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setDeactivating(row)} className="text-secondary hover:bg-attn-bg">
+                              Deactivate
+                            </Button>
+                          </span>
                         ) : (
                           <Button variant="outline" size="sm" onClick={() => reactivate(row)} aria-busy={busy === row.id}>
                             Reactivate
@@ -225,6 +248,32 @@ export function DepartmentsView({ rows: initialRows, mock }: { rows: DepartmentR
           </div>
         </section>
       </div>
+
+      {deactivating ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deactivate-dept-title"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-foreground/40 p-4"
+        >
+          <div className="w-full max-w-[440px] rounded-card border border-border bg-card p-6 text-foreground shadow-[0_12px_32px_rgb(var(--foreground)/0.18)]">
+            <h2 id="deactivate-dept-title" className="font-heading text-lg font-bold uppercase leading-6 tracking-[0.01em]">
+              Deactivate {deactivating.name}?
+            </h2>
+            <p className="mt-2 text-sm leading-[21px] text-muted-foreground">
+              It will be hidden from the Add intern form. Existing interns and historical attendance records keep their department.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeactivating(null)}>
+                Cancel
+              </Button>
+              <Button variant="secondary" onClick={() => deactivate(deactivating)} aria-busy={busy === deactivating.id}>
+                {busy === deactivating.id ? "Deactivating…" : "Deactivate"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
