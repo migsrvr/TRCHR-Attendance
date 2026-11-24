@@ -6,18 +6,12 @@ import { useRef, useState } from "react";
 
 import { Button, buttonClasses } from "@/components/ui/button";
 import { createHttpSetupApi, createMockSetupApi } from "@/lib/setup/api";
-
-const EXPIRY_OPTIONS = [
-  { value: "30", label: "30 days" },
-  { value: "90", label: "90 days (recommended)" },
-  { value: "180", label: "180 days" },
-  { value: "365", label: "365 days" },
-] as const;
+import { DEFAULT_QR_EXPIRY_OPTION, QR_EXPIRY_OPTIONS } from "@/lib/ui/qr-expiry";
 
 /** Print, Rotate, and permanently Revoke for an active checkpoint. */
 export function CheckpointActions({ id, label, mock }: { id: string; label: string; mock: boolean }) {
   const [api] = useState(() => (mock ? createMockSetupApi() : createHttpSetupApi()));
-  const [expiresInDays, setExpiresInDays] = useState("90");
+  const [expiresInDays, setExpiresInDays] = useState<string>(DEFAULT_QR_EXPIRY_OPTION);
   const [state, setState] = useState<
     | { kind: "idle" | "rotating" | "revoking" }
     | { kind: "rotated"; version: number }
@@ -56,16 +50,22 @@ export function CheckpointActions({ id, label, mock }: { id: string; label: stri
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <Link href={`/hr/setup/qr/${id}/print`} className={buttonClasses({ variant: "outline", size: "sm" })}>
-        <Printer aria-hidden="true" />
-        Print
-      </Link>
       {state.kind === "rotated" ? (
-        <span role="status" className="text-xs font-medium text-settled">
-          v{state.version} issued. Print and post it now.
-        </span>
+        <>
+          <span role="status" className="text-xs font-medium text-settled">
+            v{state.version} issued. Print and post it now.
+          </span>
+          <Link href={`/hr/setup/qr/${id}/print`} className={buttonClasses({ variant: "primary", size: "sm" })}>
+            <Printer aria-hidden="true" />
+            Print v{state.version}
+          </Link>
+        </>
       ) : (
         <>
+          <Link href={`/hr/setup/qr/${id}/print`} className={buttonClasses({ variant: "outline", size: "sm" })}>
+            <Printer aria-hidden="true" />
+            Print
+          </Link>
           <Button variant="ghost" size="sm" onClick={() => confirmRef.current?.showModal()}>
             <RotateCw aria-hidden="true" />
             Rotate code
@@ -108,7 +108,7 @@ export function CheckpointActions({ id, label, mock }: { id: string; label: stri
             onChange={(event) => setExpiresInDays(event.target.value)}
             className="h-9 rounded-btn border border-border bg-card px-3 text-sm text-foreground"
           >
-            {EXPIRY_OPTIONS.map((option) => (
+            {QR_EXPIRY_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

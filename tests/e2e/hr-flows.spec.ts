@@ -82,6 +82,15 @@ test.describe("HR desktop flows", () => {
     await expect(addCpDialog.getByRole("status").filter({ hasText: "3rd floor reception" })).toBeVisible();
     await addCpDialog.getByRole("button", { name: "Done" }).click();
 
+    // Rotate all active checkpoints (monthly default 30d)
+    await page.getByRole("button", { name: "Rotate all" }).click();
+    const rotateAllDialog = page.locator("dialog[open]");
+    await expect(rotateAllDialog.getByLabel("New poster validity")).toHaveValue("30");
+    await rotateAllDialog.getByRole("button", { name: "Rotate all now" }).click();
+    await expect(rotateAllDialog.getByRole("status").filter({ hasText: "Rotated all 2 active checkpoints" })).toBeVisible();
+    await expect(rotateAllDialog.getByRole("link", { name: "Print all new posters" })).toBeVisible();
+    await rotateAllDialog.getByRole("button", { name: "Done" }).click();
+
     // Rotate first active checkpoint & revoke second active checkpoint
     await page.getByRole("button", { name: "Rotate code" }).first().click();
     await page.locator("dialog[open]").getByRole("button", { name: "Rotate now" }).click();
@@ -90,6 +99,16 @@ test.describe("HR desktop flows", () => {
     await page.getByRole("button", { name: "Revoke" }).first().click();
     await page.locator("dialog[open]").getByRole("button", { name: "Revoke permanently" }).click();
     await expect(page.getByText(/Printed copies no longer scan/i)).toBeVisible();
+
+    // Printable posters (single + print-all bundle)
+    await page.goto("/hr/setup/qr/chk-main-in-v2/print");
+    await expect(page.getByRole("img", { name: /QR code for Time in/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download SVG" })).toBeEnabled();
+
+    await page.goto("/hr/setup/qr/print-all");
+    await expect(page.getByRole("button", { name: /Print all 2 posters/i })).toBeVisible();
+    await expect(page.getByRole("img", { name: /QR code for Time in/i })).toBeVisible();
+    await expect(page.getByRole("img", { name: /QR code for Time out/i })).toBeVisible();
 
     // Policies
     await page.goto("/hr/setup/policies");

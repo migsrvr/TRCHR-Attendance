@@ -152,8 +152,8 @@ async function main(): Promise<void> {
       });
     }
 
-    // 4. Default active IN and OUT checkpoints (90-day initial credential window)
-    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    // 4. Default active IN and OUT checkpoints (30-day monthly printable window)
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     for (const action of ["TIME_IN", "TIME_OUT"] as const) {
       const existing = await tx.qrCheckpoint.findFirst({
         where: { officeId: office.id, action, active: true },

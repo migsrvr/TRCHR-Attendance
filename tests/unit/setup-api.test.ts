@@ -17,9 +17,9 @@ describe("setup API", () => {
     expect(setupErrorMessage(500, null)).toMatch(/connection/);
   });
 
-  it("creates and revokes checkpoints in mock mode", async () => {
+  it("creates, bulk-rotates, and revokes checkpoints in mock mode", async () => {
     const api = createMockSetupApi({ delayMs: 0 });
-    const created = await api.createCheckpoint({ name: "3rd floor reception", action: "TIME_IN", expiresInDays: 90 });
+    const created = await api.createCheckpoint({ name: "3rd floor reception", action: "TIME_IN", expiresInDays: 30 });
     expect(created.ok).toBe(true);
     if (created.ok) {
       expect(created.value.action).toBe("IN");
@@ -27,5 +27,11 @@ describe("setup API", () => {
       const revoked = await api.revokeCheckpoint(created.value.id);
       expect(revoked.ok).toBe(true);
     }
+    const rotatedAll = await api.rotateAllCheckpoints({ expiresInDays: 30 });
+    expect(rotatedAll.ok).toBe(true);
+    if (rotatedAll.ok) {
+      expect(rotatedAll.value.rotatedCount).toBe(2);
+    }
+    expect(setupErrorMessage(404, { error: { code: "NO_ACTIVE_CHECKPOINTS" } })).toMatch(/no active QR/i);
   });
 });

@@ -27,15 +27,28 @@ describe("OfficeSetupView", () => {
     expect(html).toContain('href="/hr/setup/policies"');
   });
 
-  it("lists QR checkpoints with add, print, rotate, and revoke, revoked rows muted", async () => {
-    const html = renderToStaticMarkup(<OfficeSetupView data={await getOfficeSetup()} mock />);
+  it("lists QR checkpoints with add, print all, rotate all, print, rotate, and revoke, revoked rows muted", async () => {
+    const html = renderToStaticMarkup(<OfficeSetupView data={await getOfficeSetup()} todayIso="2026-10-19" mock />);
     expect(html).toContain("Add checkpoint");
+    expect(html).toContain('href="/hr/setup/qr/print-all"');
+    expect(html).toContain("Rotate all");
     expect(html).toContain('href="/hr/setup/qr/chk-main-in-v2/print"');
     expect(html.match(/Rotate code/g)).toHaveLength(2);
     expect(html.match(/>Revoke</g)).toHaveLength(2);
     expect(html).toContain("Revoked Sep 1");
     expect(html).toMatch(/data-revoked="true"[^>]*text-muted-foreground/);
     expect(html).toContain("Rotating revokes every printed copy of the old code immediately");
+  });
+
+  it("alerts HR when printed QR codes are expiring within 7 days or already expired", async () => {
+    const setup = await getOfficeSetup();
+    const soonHtml = renderToStaticMarkup(<OfficeSetupView data={setup} todayIso="2026-12-27" mock />);
+    expect(soonHtml).toContain("Monthly QR rotation due soon.");
+    expect(soonHtml).toContain("Expires in 4d");
+
+    const expiredHtml = renderToStaticMarkup(<OfficeSetupView data={setup} todayIso="2027-01-02" mock />);
+    expect(expiredHtml).toContain("Printed QR code expired.");
+    expect(expiredHtml).toContain(">Expired<");
   });
 });
 

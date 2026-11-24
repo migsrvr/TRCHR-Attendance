@@ -36,6 +36,7 @@ export interface SetupApi {
   saveOffice(input: SaveOfficeInput): Promise<ApiResult<{ settingsVersion: number }>>;
   createCheckpoint(input: CreateCheckpointInput): Promise<ApiResult<CreatedCheckpoint>>;
   rotateCheckpoint(checkpointId: string, options?: { expiresInDays?: number }): Promise<ApiResult<{ codeVersion: number }>>;
+  rotateAllCheckpoints(options?: { officeId?: string; expiresInDays?: number }): Promise<ApiResult<{ rotatedCount: number; expiresIso: string }>>;
   revokeCheckpoint(checkpointId: string): Promise<ApiResult<{ id: string; revokedIso: string }>>;
   createPolicyDraft(officeId?: string, fromVersion?: number): Promise<ApiResult<{ version: number }>>;
   savePolicyDraft(input: {
@@ -59,6 +60,7 @@ const MESSAGES: Record<string, string> = {
   STALE_VERSION: "Settings were updated by someone else. Refresh the page and try again.",
   ALREADY_REVOKED: "That checkpoint is already revoked.",
   CHECKPOINT_REVOKED: "That checkpoint is revoked and can't be rotated.",
+  NO_ACTIVE_CHECKPOINTS: "There are no active QR checkpoints to rotate.",
   FORBIDDEN: "Only HR can change setup. Sign in with an HR account.",
 };
 
@@ -92,6 +94,7 @@ export function createHttpSetupApi(base = "/api/v1/hr"): SetupApi {
     createCheckpoint: (input) => send(`${base}/checkpoints`, input, "POST"),
     rotateCheckpoint: (id, options = {}) =>
       send(`${base}/checkpoints/${encodeURIComponent(id)}/rotate`, options, "POST"),
+    rotateAllCheckpoints: (options = {}) => send(`${base}/checkpoints/rotate-all`, options, "POST"),
     revokeCheckpoint: (id) =>
       send(`${base}/checkpoints/${encodeURIComponent(id)}/revoke`, {}, "POST"),
     createPolicyDraft: (officeId = "default", fromVersion) =>
@@ -120,7 +123,7 @@ export function createMockSetupApi(options: { delayMs?: number; existingNames?: 
     },
     async createCheckpoint(input) {
       await wait();
-      const days = input.expiresInDays ?? 90;
+      const days = input.expiresInDays ?? 30;
       const expiresIso = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const slug = input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
       const action = input.action === "TIME_IN" ? "IN" : "OUT";
@@ -138,6 +141,12 @@ export function createMockSetupApi(options: { delayMs?: number; existingNames?: 
     async rotateCheckpoint() {
       await wait();
       return { ok: true, value: { codeVersion: 3 } };
+    },
+    async rotateAllCheckpoints(options = {}) {
+      await wait();
+      const days = options.expiresInDays ?? 30;
+      const expiresIso = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      return { ok: true, value: { rotatedCount: 2, expiresIso } };
     },
     async revokeCheckpoint(id) {
       await wait();

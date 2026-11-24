@@ -15,7 +15,7 @@ import type { CheckpointVM, OfficeSetupVM, PoliciesVM, PolicyVersionVM } from "@
 import { dateToIso, policyToUiRules } from "@/modules/attendance/credit";
 import { recordAuditEvent } from "@/modules/audit";
 
-const DEFAULT_QR_EXPIRY_DAYS = 90;
+const DEFAULT_QR_EXPIRY_DAYS = 30;
 
 export interface PublishPolicyVersionInput {
   readonly actorId: string;
@@ -71,6 +71,24 @@ export interface RevokeCheckpointInput {
 export interface RevokeCheckpointResult {
   readonly id: string;
   readonly revokedIso: string;
+}
+
+export interface RotateAllCheckpointsInput {
+  readonly actorId: string;
+  readonly officeId?: string;
+  readonly expiresInDays?: number;
+  readonly correlationId: string;
+}
+
+export interface RotateAllCheckpointsResult {
+  readonly rotatedCount: number;
+  readonly expiresIso: string;
+  readonly checkpoints: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly action: "IN" | "OUT";
+    readonly codeVersion: number;
+  }[];
 }
 
 export interface UpdateOfficeSettingsInput {
@@ -764,4 +782,114 @@ export async function revokeCheckpoint(input: RevokeCheckpointInput): Promise<Re
 
     return { id: updated.id, revokedIso };
   });
+}
+
+/** Rotate every active checkpoint for the office together (monthly printable swap). */
+export async function rotateAllActiveCheckpoints(
+  input: RotateAllCheckpointsInput,
+): Promise<RotateAllCheckpointsResult> {
+  const days = input.expiresInDays ?? DEFAULT_QR_EXPIRY_DAYS;
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    throw new AppError(400, "INVALID_EXPIRY", "QR expiry lifetime must be between 1 and 365 days.", false);
+  }
+  const expiresAtUtc = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+  return prisma.$transaction(async (tx) => {
+    const office = input.officeId
+      ? await tx.office.findUnique({ where: { id: input.officeId } })
+      : await tx.office.findFirst({ orderBy: { createdAt: "asc" } });
+    if (!office) {
+      throw new AppError(404, "OFFICE_NOT_FOUND", "Office not found.", false);
+    }
+
+    const activeCheckpoints = await tx.qrCheckpoint.findMany({
+      where: { officeId: office.id, active: true },
+      orderBy: [{ action: "asc" }, { createdAt: "asc" }],
+    });
+    if (activeCheckpoints.length === 0) {
+      throw new AppError(404, "NO_ACTIVE_CHECKPOINTS", "There are no active QR checkpoints to rotate.", false);
+    }
+
+    const rotated: { id: string; name: string; action: "IN" | "OUT"; codeVersion: number }[] = [];
+    for (const cp of activeCheckpoints) {
+      const updated = await tx.qrCheckpoint.update({
+        where: { id: cp.id },
+        data: {
+          credentialVersion: { increment: 1 },
+          credentialExpiresAtUtc: expiresAtUtc,
+        },
+      });
+      rotated.push({
+        id: updated.id,
+        name: updated.name,
+        action: updated.action === "TIME_IN" ? "IN" : "OUT",
+        codeVersion: updated.credentialVersion,
+      });
+    }
+
+    const expiresIso = officeDateIso(expiresAtUtc, office.timezone);
+    await recordAuditEvent(tx, {
+      actorId: input.actorId,
+      action: "checkpoint.rotated_all",
+      resourceType: "office",
+      resourceId: office.id,
+      afterValues: {
+        rotatedCount: rotated.length,
+        expiresIso,
+        checkpoints: rotated.map((c) => `${c.name} ${c.action} v${c.codeVersion}`),
+        summary: `Rotated all ${rotated.length} active QR checkpoints (valid until ${expiresIso})`,
+      },
+      correlationId: input.correlationId,
+    });
+
+    return {
+      rotatedCount: rotated.length,
+      expiresIso,
+      checkpoints: rotated,
+    };
+  });
+}
+
+/** Issue signed printable QR tokens for every active checkpoint in the primary office. */
+export async function issueAllActiveCheckpointTokens(officeId?: string): Promise<{
+  readonly officeName: string;
+  readonly items: readonly { readonly checkpoint: CheckpointVM; readonly token: string }[];
+}> {
+  const office = officeId
+    ? await prisma.office.findUnique({ where: { id: officeId } })
+    : await prisma.office.findFirst({ orderBy: { createdAt: "asc" } });
+  if (!office) {
+    throw new AppError(503, "OFFICE_NOT_CONFIGURED", "No office record has been seeded yet.", false);
+  }
+
+  const activeCheckpoints = await prisma.qrCheckpoint.findMany({
+    where: { officeId: office.id, active: true },
+    orderBy: [{ action: "asc" }, { createdAt: "asc" }],
+  });
+
+  const qrConfig = loadQrKeyringConfig();
+  const activeSecret = qrConfig.keyring[qrConfig.activeKid]!;
+  const items: { checkpoint: CheckpointVM; token: string }[] = [];
+
+  for (const cp of activeCheckpoints) {
+    const expiresAtUtc =
+      cp.credentialExpiresAtUtc && cp.credentialExpiresAtUtc.getTime() > Date.now()
+        ? cp.credentialExpiresAtUtc
+        : new Date(Date.now() + DEFAULT_QR_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    const token = await signQrCredential(
+      {
+        iss: qrConfig.issuer,
+        aud: qrConfig.audience,
+        kid: qrConfig.activeKid,
+        checkpointId: cp.id,
+        action: cp.action,
+        credentialVersion: cp.credentialVersion,
+        expiresAtUtc,
+      },
+      activeSecret,
+    );
+    items.push({ checkpoint: mapCheckpoint(cp, office.timezone), token });
+  }
+
+  return { officeName: office.name, items };
 }

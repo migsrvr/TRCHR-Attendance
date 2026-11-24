@@ -85,6 +85,7 @@ import {
 } from "@/modules/corrections";
 import {
   getOfficeSetup as liveGetOfficeSetup,
+  issueAllActiveCheckpointTokens as liveIssueAllActiveCheckpointTokens,
   issueCheckpointToken as liveIssueCheckpointToken,
   listPolicyVersions as liveListPolicyVersions,
 } from "@/modules/offices";
@@ -598,4 +599,21 @@ export async function getCheckpointPrint(id: string): Promise<{ checkpoint: Chec
   const checkpoint = CHECKPOINTS.find((candidate) => candidate.id === id);
   if (!checkpoint || (checkpoint.status.type === "checkpoint" && checkpoint.status.value === "REVOKED")) return null;
   return { checkpoint, token: DEV_PRINT_TOKENS[checkpoint.action], officeName: OFFICE.name };
+}
+
+export async function getAllActiveCheckpointPrints(): Promise<{
+  officeName: string;
+  items: { checkpoint: CheckpointVM; token: string }[];
+}> {
+  if (!shouldUseFixtures()) {
+    const live = await liveIssueAllActiveCheckpointTokens();
+    return { officeName: live.officeName, items: [...live.items] };
+  }
+  const active = CHECKPOINTS.filter(
+    (checkpoint) => !(checkpoint.status.type === "checkpoint" && checkpoint.status.value === "REVOKED"),
+  );
+  return {
+    officeName: OFFICE.name,
+    items: active.map((checkpoint) => ({ checkpoint, token: DEV_PRINT_TOKENS[checkpoint.action] })),
+  };
 }

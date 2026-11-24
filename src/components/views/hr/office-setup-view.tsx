@@ -1,4 +1,4 @@
-import { Settings2 } from "lucide-react";
+import { Printer, Settings2, TriangleAlert } from "lucide-react";
 
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -7,18 +7,39 @@ import { StatusMark } from "@/components/ui/status-mark";
 import { AddCheckpointDialog } from "@/components/views/hr/add-checkpoint-dialog";
 import { CheckpointActions } from "@/components/views/hr/checkpoint-actions";
 import { OfficeSettingsForm } from "@/components/views/hr/office-settings-form";
+import { RotateAllCheckpointsDialog } from "@/components/views/hr/rotate-all-checkpoints-dialog";
 import { ExampleValuesBanner, versionRange } from "@/components/views/hr/setup-shared";
-import { formatDuration, formatLongDate, formatShortDate } from "@/lib/ui/format";
+import { formatDuration, formatLongDate, formatShortDate, officeDateIso } from "@/lib/ui/format";
 import { roundingLabel, workdaysLabel } from "@/lib/ui/policy";
+import { classifyCheckpointExpiry } from "@/lib/ui/qr-expiry";
 import type { OfficeSetupVM } from "@/lib/ui/view-models";
 import { cn } from "@/lib/utils";
 
 const TH = "border-b border-border px-3 py-2.5 text-left text-xs font-semibold leading-4 text-muted-foreground";
 const TD = "border-b border-hairline px-3 py-3 align-middle text-[13px] leading-[18px]";
 
-export function OfficeSetupView({ data, mock }: { data: OfficeSetupVM; mock: boolean }) {
+export function OfficeSetupView({
+  data,
+  mock,
+  todayIso: todayIsoProp,
+}: {
+  data: OfficeSetupVM;
+  mock: boolean;
+  todayIso?: string;
+}) {
   const policy = data.activePolicy;
   const rules = policy.rules;
+  const todayIso = todayIsoProp ?? officeDateIso(new Date(), data.office.timeZone);
+  const activeCheckpoints = data.checkpoints.filter(
+    (checkpoint) => !(checkpoint.status.type === "checkpoint" && checkpoint.status.value === "REVOKED"),
+  );
+  const rotationAlerts = activeCheckpoints
+    .map((checkpoint) => ({
+      checkpoint,
+      expiry: classifyCheckpointExpiry(checkpoint.expiresIso, todayIso),
+    }))
+    .filter((entry) => entry.expiry.state === "expired" || entry.expiry.state === "expiring-soon");
+  const hasExpired = rotationAlerts.some((entry) => entry.expiry.state === "expired");
 
   return (
     <>
@@ -92,9 +113,42 @@ export function OfficeSetupView({ data, mock }: { data: OfficeSetupVM; mock: boo
         <CardHeader
           id="qr-title"
           title="QR checkpoints"
-          description="Printed codes at the entrance. Each holds a signed checkpoint reference, never intern details."
-          action={<AddCheckpointDialog officeId={data.office.id} mock={mock} />}
+          description="Printed posters at the entrance, rotated monthly or whenever needed. Each holds a signed checkpoint reference, never intern details."
+          action={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {activeCheckpoints.length > 0 ? (
+                <>
+                  <ButtonLink href="/hr/setup/qr/print-all" variant="outline" size="sm">
+                    <Printer aria-hidden="true" />
+                    Print all
+                  </ButtonLink>
+                  <RotateAllCheckpointsDialog
+                    officeId={data.office.id}
+                    activeCount={activeCheckpoints.length}
+                    mock={mock}
+                  />
+                </>
+              ) : null}
+              <AddCheckpointDialog officeId={data.office.id} mock={mock} />
+            </div>
+          }
         />
+        {rotationAlerts.length > 0 ? (
+          <div
+            role="status"
+            className="mx-5 mb-4 flex items-start gap-2.5 rounded-btn border border-attn/35 bg-attn-bg px-4 py-3 text-[13px] leading-[19px]"
+          >
+            <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-attn" />
+            <p>
+              <span className="font-semibold text-attn">
+                {hasExpired ? "Printed QR code expired." : "Monthly QR rotation due soon."}
+              </span>{" "}
+              {hasExpired
+                ? "Interns can't scan an expired poster. Rotate and print fresh sheets now."
+                : `${rotationAlerts.length} active ${rotationAlerts.length === 1 ? "poster expires" : "posters expire"} within 7 days. Use Rotate all and Print all to swap them cleanly.`}
+            </p>
+          </div>
+        ) : null}
         <div className="relative overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse">
             <thead>
@@ -122,6 +176,7 @@ export function OfficeSetupView({ data, mock }: { data: OfficeSetupVM; mock: boo
             <tbody>
               {data.checkpoints.map((checkpoint) => {
                 const revoked = checkpoint.status.type === "checkpoint" && checkpoint.status.value === "REVOKED";
+                const expiry = revoked ? { state: "none" as const, daysLeft: null } : classifyCheckpointExpiry(checkpoint.expiresIso, todayIso);
                 return (
                   <tr key={checkpoint.id} data-revoked={revoked ? "true" : undefined} className={cn(revoked && "text-muted-foreground")}>
                     <td className={cn(TD, "pl-5 font-semibold")}>{checkpoint.name}</td>
@@ -130,7 +185,14 @@ export function OfficeSetupView({ data, mock }: { data: OfficeSetupVM; mock: boo
                       {checkpoint.action} · v{checkpoint.codeVersion}
                     </td>
                     <td className={cn(TD, "font-mono text-xs")}>
-                      {checkpoint.expiresIso ? formatLongDate(checkpoint.expiresIso).replace(/^\w+, /, "") : "—"}
+                      <div>{checkpoint.expiresIso ? formatLongDate(checkpoint.expiresIso).replace(/^\w+, /, "") : "—"}</div>
+                      {expiry.state === "expired" ? (
+                        <div className="mt-0.5 font-sans font-semibold text-attn">Expired</div>
+                      ) : expiry.state === "expiring-soon" ? (
+                        <div className="mt-0.5 font-sans font-semibold text-attn">
+                          {expiry.daysLeft === 0 ? "Expires today" : `Expires in ${expiry.daysLeft}d`}
+                        </div>
+                      ) : null}
                     </td>
                     <td className={TD}>
                       <StatusMark
@@ -155,8 +217,8 @@ export function OfficeSetupView({ data, mock }: { data: OfficeSetupVM; mock: boo
           </table>
         </div>
         <p className="px-5 py-3 text-xs leading-[18px] text-muted-foreground">
-          Rotating revokes every printed copy of the old code immediately. Print and post the new one before you rotate during
-          office hours.
+          No lobby screen needed — print and post the active sheets at the entrance and swap them monthly or whenever a
+          code is shared. Rotating revokes every printed copy of the old code immediately.
         </p>
       </Card>
     </>

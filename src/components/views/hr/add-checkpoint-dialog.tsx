@@ -7,13 +7,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, INPUT_CLASSES } from "@/components/ui/field";
 import { createHttpSetupApi, createMockSetupApi, type CreatedCheckpoint } from "@/lib/setup/api";
-
-const EXPIRY_OPTIONS = [
-  { value: "30", label: "30 days" },
-  { value: "90", label: "90 days (recommended)" },
-  { value: "180", label: "180 days" },
-  { value: "365", label: "365 days" },
-] as const;
+import { DEFAULT_QR_EXPIRY_OPTION, QR_EXPIRY_OPTIONS } from "@/lib/ui/qr-expiry";
 
 /** Modal dialog to create a new QR checkpoint (Time in or Time out) for the office. */
 export function AddCheckpointDialog({
@@ -27,7 +21,7 @@ export function AddCheckpointDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("");
   const [action, setAction] = useState<"TIME_IN" | "TIME_OUT">("TIME_IN");
-  const [expiresInDays, setExpiresInDays] = useState("90");
+  const [expiresInDays, setExpiresInDays] = useState<string>(DEFAULT_QR_EXPIRY_OPTION);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [created, setCreated] = useState<CreatedCheckpoint | null>(null);
@@ -35,7 +29,7 @@ export function AddCheckpointDialog({
   function reset() {
     setName("");
     setAction("TIME_IN");
-    setExpiresInDays("90");
+    setExpiresInDays(DEFAULT_QR_EXPIRY_OPTION);
     setError(null);
     setCreated(null);
   }
@@ -167,7 +161,7 @@ export function AddCheckpointDialog({
                     onChange={(event) => setExpiresInDays(event.target.value)}
                     className={INPUT_CLASSES}
                   >
-                    {EXPIRY_OPTIONS.map((option) => (
+                    {QR_EXPIRY_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
