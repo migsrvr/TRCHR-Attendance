@@ -36,6 +36,13 @@ export interface QrKeyringConfig {
 
 const MIN_SECRET_LENGTH = 16;
 
+/**
+ * Custom application prefix prepended to signed QR tokens so native iOS/Android
+ * camera apps and Google Lens treat the poster as an opaque TRCHR credential
+ * rather than a clickable web URL.
+ */
+export const QR_TOKEN_PREFIX = "trchr1.";
+
 export async function signQrCredential(
   input: SignQrCredentialInput,
   signingSecret: string,
@@ -54,7 +61,7 @@ export async function signQrCredential(
   const nbfSec = input.notBeforeUtc ? Math.floor(input.notBeforeUtc.getTime() / 1000) : nowSec;
   const expSec = Math.floor(input.expiresAtUtc.getTime() / 1000);
 
-  return new SignJWT({
+  const jws = await new SignJWT({
     checkpointId: input.checkpointId,
     action: input.action,
     credentialVersion: input.credentialVersion,
@@ -66,6 +73,8 @@ export async function signQrCredential(
     .setNotBefore(nbfSec)
     .setExpirationTime(expSec)
     .sign(new TextEncoder().encode(signingSecret));
+
+  return `${QR_TOKEN_PREFIX}${jws}`;
 }
 
 /** Load the server QR keyring and active kid from environment variables. */

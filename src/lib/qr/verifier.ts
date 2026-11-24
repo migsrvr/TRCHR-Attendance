@@ -55,9 +55,15 @@ export async function verifyQrCredential(
     throw new QrVerificationError("QR_INVALID", "QR credential token is empty");
   }
 
+  const trimmed = token.trim();
+  const rawJwt =
+    trimmed.startsWith("trchr1.") || trimmed.startsWith("trchr1:")
+      ? trimmed.slice(7)
+      : trimmed;
+
   let header: Record<string, unknown>;
   try {
-    header = decodeProtectedHeader(token) as Record<string, unknown>;
+    header = decodeProtectedHeader(rawJwt) as Record<string, unknown>;
   } catch {
     throw new QrVerificationError("QR_INVALID", "Malformed QR credential header");
   }
@@ -83,7 +89,7 @@ export async function verifyQrCredential(
   }
 
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+    const { payload } = await jwtVerify(rawJwt, new TextEncoder().encode(secret), {
       algorithms: ["HS256"],
       issuer: options.issuer,
       audience: options.audience,

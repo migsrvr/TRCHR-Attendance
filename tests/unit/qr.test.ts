@@ -25,6 +25,8 @@ describe("QR credential signing and verification", () => {
       SECRET_K1,
     );
 
+    expect(token.startsWith("trchr1.")).toBe(true);
+
     const verified = await verifyQrCredential(token, {
       issuer: ISS,
       audience: AUD,
@@ -36,6 +38,14 @@ describe("QR credential signing and verification", () => {
     expect(verified.action).toBe("TIME_IN");
     expect(verified.credentialVersion).toBe(2);
     expect(verified.expiresAtUtc).toBeInstanceOf(Date);
+
+    // Also verifies legacy bare JWS tokens without prefix for smooth transition
+    const legacyVerified = await verifyQrCredential(token.slice("trchr1.".length), {
+      issuer: ISS,
+      audience: AUD,
+      keyring: KEYRING,
+    });
+    expect(legacyVerified.checkpointId).toBe("11111111-1111-4111-8111-111111111111");
   });
 
   it("rejects a token whose algorithm is not in the HS256 allowlist", async () => {

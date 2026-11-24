@@ -344,6 +344,14 @@ export interface ReviewEvidenceVM {
   radiusM: number;
   accuracyM: number;
   accepted: boolean;
+  /** Optional front-camera verification selfie captured in-app during scan. */
+  photoDataUrl?: string;
+  /** Optional rear-camera wall QR poster frame captured at QR decode. */
+  wallPosterDataUrl?: string;
+  /** SHA-256 hex digest of the verification selfie. */
+  photoSha256?: string;
+  /** Any buddy-punching or GPS anomaly warnings flagged for HR review. */
+  securityWarnings?: string[];
 }
 
 export interface ReviewDetailVM {
@@ -413,6 +421,14 @@ export interface SessionScanVM {
   distanceM: number;
   accepted: boolean;
   rejectReason?: string;
+  /** Optional front-camera verification selfie captured in-app during scan. */
+  photoDataUrl?: string;
+  /** Optional rear-camera wall QR poster frame captured at QR decode. */
+  wallPosterDataUrl?: string;
+  /** SHA-256 hex digest of the verification selfie. */
+  photoSha256?: string;
+  /** Any buddy-punching or GPS anomaly warnings flagged for HR review. */
+  securityWarnings?: string[];
 }
 
 export interface SessionDetailVM {

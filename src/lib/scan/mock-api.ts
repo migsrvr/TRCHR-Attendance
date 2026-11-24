@@ -98,7 +98,8 @@ export function createMockScanApi(options: MockScanApiOptions): ScanApi {
       await sleep(delayMs, signal);
       if (scenario === "session-expired") return { ok: false, failure: { reason: "session-expired" } };
 
-      const match = /^TR-(IN|OUT)$/.exec(qrToken.trim());
+      const normalizedToken = qrToken.trim().replace(/^trchr1[.:]/i, "");
+      const match = /^TR-(IN|OUT)$/.exec(normalizedToken);
       if (!match) return { ok: false, failure: { reason: "invalid-qr" } };
       if (scenario === "invalid-qr") return { ok: false, failure: { reason: "invalid-qr" } };
       if (scenario === "expired-qr") return { ok: false, failure: { reason: "expired-qr" } };

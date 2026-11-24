@@ -27,6 +27,7 @@ export type FailReason =
   | "expired-qr"
   | "outside"
   | "accuracy"
+  | "photo-invalid"
   | "already-in"
   | "not-in"
   | "session-expired"
@@ -35,6 +36,21 @@ export type FailReason =
   | "location-unavailable"
   | "not-saved"
   | "server";
+
+export interface PhotoCaptureFrame {
+  dataUrl: string;
+  sha256: string;
+  capturedAtUtc: string;
+  facingMode: "environment" | "user";
+  width: number;
+  height: number;
+  frameVariance: number;
+}
+
+export interface ScanPhotoEvidence {
+  wallPoster?: PhotoCaptureFrame;
+  selfie: PhotoCaptureFrame;
+}
 
 export interface ScanIntent {
   intentId: string;

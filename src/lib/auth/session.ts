@@ -8,6 +8,7 @@
 import type { InternshipStatus, UserRole, UserStatus } from "@prisma/client";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -53,8 +54,7 @@ export function getMockModeReason(): "explicit" | "no-database" | null {
   return null;
 }
 
-export async function getServerActor(reqHeaders?: Headers): Promise<AuthenticatedActor | null> {
-  const hdrs = reqHeaders ?? (await headers());
+async function resolveActorFromHeaders(hdrs: Headers): Promise<AuthenticatedActor | null> {
   const session = await auth.api
     .getSession({
       headers: hdrs,
@@ -87,6 +87,19 @@ export async function getServerActor(reqHeaders?: Headers): Promise<Authenticate
   };
 }
 
+/** Per-request cached actor lookup for Server Components & layouts (eliminates duplicate Neon DB queries). */
+const getCachedPageActor = cache(async (): Promise<AuthenticatedActor | null> => {
+  const hdrs = await headers();
+  return resolveActorFromHeaders(hdrs);
+});
+
+export async function getServerActor(reqHeaders?: Headers): Promise<AuthenticatedActor | null> {
+  if (reqHeaders) {
+    return resolveActorFromHeaders(reqHeaders);
+  }
+  return getCachedPageActor();
+}
+
 export async function requireApiUser(request: Request): Promise<AuthenticatedActor> {
   const actor = await getServerActor(request.headers);
   if (!actor) {
@@ -109,18 +122,22 @@ export async function requireApiHr(request: Request): Promise<AuthenticatedActor
   return actor;
 }
 
-export async function loadActiveInternActor(actor: AuthenticatedActor): Promise<ActiveInternActor> {
-  if (actor.role !== "INTERN") {
-    throw new AppError(403, "FORBIDDEN", "Only intern accounts can perform this action.", false);
-  }
-
-  const internship = await prisma.internship.findFirst({
-    where: { internUserId: actor.userId, status: "ACTIVE" },
+const loadCachedInternByUserId = cache(async (userId: string) => {
+  return prisma.internship.findFirst({
+    where: { internUserId: userId, status: "ACTIVE" },
     include: {
       department: { select: { name: true } },
       office: { select: { name: true, timezone: true } },
     },
   });
+});
+
+export async function loadActiveInternActor(actor: AuthenticatedActor): Promise<ActiveInternActor> {
+  if (actor.role !== "INTERN") {
+    throw new AppError(403, "FORBIDDEN", "Only intern accounts can perform this action.", false);
+  }
+
+  const internship = await loadCachedInternByUserId(actor.userId);
 
   if (!internship) {
     throw new AppError(403, "NO_ACTIVE_INTERNSHIP", "No active internship assignment found for this account.", false);

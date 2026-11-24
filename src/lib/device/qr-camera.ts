@@ -37,7 +37,7 @@ function prepareVideo(video: HTMLVideoElement) {
  */
 export async function startQrCamera(
   video: HTMLVideoElement,
-  onDecode: (text: string) => void,
+  onDecode: (text: string, video: HTMLVideoElement) => void,
 ): Promise<QrCameraHandle> {
   prepareVideo(video);
   const { BrowserQRCodeReader } = await import("@zxing/browser");
@@ -50,8 +50,12 @@ export async function startQrCamera(
   const controls = await reader.decodeFromConstraints(CONSTRAINTS, video, (result, _error, ctl) => {
     if (!result || finished) return;
     finished = true;
-    ctl.stop();
-    onDecode(result.getText());
+    // Notify caller BEFORE stopping stream so the live rear-camera frame can be captured.
+    try {
+      onDecode(result.getText(), video);
+    } finally {
+      ctl.stop();
+    }
   });
 
   return {

@@ -8,8 +8,10 @@ import { ScanCheckingView } from "@/components/views/intern/scan-checking-view";
 import { ScanFailedView } from "@/components/views/intern/scan-failed-view";
 import { ScanReadyView } from "@/components/views/intern/scan-ready-view";
 import { ScanSavedView } from "@/components/views/intern/scan-saved-view";
+import { ScanSelfieView } from "@/components/views/intern/scan-selfie-view";
 import { ScanUnconfirmedView } from "@/components/views/intern/scan-unconfirmed-view";
 import { getFreshLocation, LocationError } from "@/lib/device/location";
+import { captureLiveVideoFrame, createSyntheticDevPhotoFrame } from "@/lib/device/photo-capture";
 import {
   cameraSupport,
   classifyCameraError,
@@ -24,7 +26,7 @@ import { formatClock, formatShortDate } from "@/lib/ui/format";
 import { newId } from "@/lib/ui/id";
 import type { ScanContext } from "@/lib/ui/queries/intern";
 import { blockedCopy, failureCopy } from "@/lib/ui/scan-copy";
-import { initialScanState, scanReducer } from "@/lib/ui/scan-state";
+import { initialScanState, scanReducer, type PhotoCaptureFrame } from "@/lib/ui/scan-state";
 
 import { DevPanel } from "./dev-panel";
 
@@ -51,8 +53,18 @@ export function ScanClient({ context, mock }: { context: ScanContext; mock: Mock
     inApp: null,
   });
   const [pageVisible, setPageVisible] = useState(true);
+  const [wallPosterFrame, setWallPosterFrame] = useState<PhotoCaptureFrame | null>(null);
+  const [selfieFrame, setSelfieFrame] = useState<PhotoCaptureFrame | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraOff = mock?.cameraOff ?? false;
+
+  // Reset captured frames whenever returning to the scanner.
+  useEffect(() => {
+    if (state.status === "starting" || state.status === "ready") {
+      setWallPosterFrame(null);
+      setSelfieFrame(null);
+    }
+  }, [state.status]);
 
   // Platform is only knowable in the browser.
   useEffect(() => {
@@ -95,9 +107,25 @@ export function ScanClient({ context, mock }: { context: ScanContext; mock: Mock
 
     let cancelled = false;
     let handle: QrCameraHandle | null = null;
-    startQrCamera(video, (token) => {
+    startQrCamera(video, (token, liveVideo) => {
       if (cancelled) return;
       confirmDecodeHaptic();
+      const watermarkText = `TRCHR · WALL-QR · ${new Date().toISOString().slice(0, 19)}Z`;
+      void captureLiveVideoFrame(liveVideo, {
+        facingMode: "environment",
+        watermarkText,
+      }).then(async (captured) => {
+        if (captured) {
+          setWallPosterFrame(captured);
+        } else {
+          setWallPosterFrame(
+            await createSyntheticDevPhotoFrame({
+              facingMode: "environment",
+              watermarkText,
+            }),
+          );
+        }
+      });
       dispatch({ type: "decoded", token, requestKey: newId() });
     })
       .then((started) => {
@@ -121,6 +149,9 @@ export function ScanClient({ context, mock }: { context: ScanContext; mock: Mock
   // Checking: one step per state; the reducer moves us to the next.
   useEffect(() => {
     if (state.status !== "checking") return;
+    // Pause before submitScan until the intern confirms the front-camera selfie.
+    if (state.step === "saving" && !state.rechecking && !selfieFrame) return;
+
     let cancelled = false;
     const controller = new AbortController();
     const timer =
@@ -140,9 +171,17 @@ export function ScanClient({ context, mock }: { context: ScanContext; mock: Mock
           const receipt = await api.getReceipt(state.requestKey, controller.signal);
           if (cancelled) return;
           dispatch(receipt ? { type: "saved", receipt } : { type: "failed", failure: { reason: "not-saved" } });
-        } else if (state.intent && state.location) {
+        } else if (state.intent && state.location && selfieFrame) {
           const result = await api.submitScan(
-            { intentId: state.intent.intentId, requestKey: state.requestKey, location: state.location },
+            {
+              intentId: state.intent.intentId,
+              requestKey: state.requestKey,
+              location: state.location,
+              photoEvidence: {
+                wallPoster: wallPosterFrame ?? undefined,
+                selfie: selfieFrame,
+              },
+            },
             controller.signal,
           );
           if (cancelled) return;
@@ -167,7 +206,7 @@ export function ScanClient({ context, mock }: { context: ScanContext; mock: Mock
       if (timer) clearTimeout(timer);
       controller.abort();
     };
-  }, [state, api]);
+  }, [state, api, selfieFrame, wallPosterFrame]);
 
   // After a save: keep the identity card current and fetch today's totals for a Time out.
   useEffect(() => {
@@ -229,7 +268,13 @@ export function ScanClient({ context, mock }: { context: ScanContext; mock: Mock
                 scenario={mock.scenario}
                 openSince={context.openSince}
                 cameraOff={cameraOff}
-                onSimulate={(token) => dispatch({ type: "decoded", token, requestKey: newId() })}
+                onSimulate={(token) => {
+                  void createSyntheticDevPhotoFrame({
+                    facingMode: "environment",
+                    watermarkText: `TRCHR · WALL-QR · ${token}`,
+                  }).then(setWallPosterFrame);
+                  dispatch({ type: "decoded", token, requestKey: newId() });
+                }}
               />
             ) : undefined
           }
@@ -237,14 +282,30 @@ export function ScanClient({ context, mock }: { context: ScanContext; mock: Mock
       );
       break;
     case "checking":
-      body = (
-        <ScanCheckingView
-          step={state.step}
-          attempted={state.intent?.action ?? state.expected}
-          checkpointName={state.intent?.checkpointName}
-          rechecking={state.rechecking}
-        />
-      );
+      body =
+        state.step === "saving" && !state.rechecking && !selfieFrame && state.intent ? (
+          <ScanSelfieView
+            action={state.intent.action}
+            checkpointName={state.intent.checkpointName}
+            intentId={state.intent.intentId}
+            wallPoster={wallPosterFrame}
+            cameraOff={cameraOff}
+            onConfirm={(selfie) => setSelfieFrame(selfie)}
+            onCancel={() =>
+              dispatch({
+                type: "failed",
+                failure: { reason: "photo-invalid" },
+              })
+            }
+          />
+        ) : (
+          <ScanCheckingView
+            step={state.step}
+            attempted={state.intent?.action ?? state.expected}
+            checkpointName={state.intent?.checkpointName}
+            rechecking={state.rechecking}
+          />
+        );
       break;
     case "saved":
       body = (

@@ -7,6 +7,7 @@ import { ScanCheckingView } from "@/components/views/intern/scan-checking-view";
 import { ScanFailedView } from "@/components/views/intern/scan-failed-view";
 import { ScanReadyView } from "@/components/views/intern/scan-ready-view";
 import { ScanSavedView } from "@/components/views/intern/scan-saved-view";
+import { ScanSelfieView } from "@/components/views/intern/scan-selfie-view";
 import { ScanUnconfirmedView } from "@/components/views/intern/scan-unconfirmed-view";
 import { blockedCopy, failureCopy } from "@/lib/ui/scan-copy";
 import type { ScanReceipt } from "@/lib/ui/scan-state";
@@ -159,5 +160,32 @@ describe("ScanBlockedView", () => {
       <ScanBlockedView copy={blockedCopy("camera-denied", { platform: "android", inApp: "Messenger" })} onRetry={noop} />,
     );
     expect(html).toContain("Open in Chrome");
+  });
+});
+
+describe("ScanSelfieView", () => {
+  it("renders front-camera confirmation and wall QR badge", () => {
+    const html = renderToStaticMarkup(
+      <ScanSelfieView
+        action="TIME_IN"
+        checkpointName="Main entrance · IN"
+        intentId="11111111-1111-4111-8111-111111111111"
+        wallPoster={{
+          dataUrl: "data:image/jpeg;base64,d2FsbA==",
+          sha256: "0".repeat(64),
+          capturedAtUtc: "2026-10-19T00:57:10Z",
+          facingMode: "environment",
+          width: 480,
+          height: 360,
+          frameVariance: 18,
+        }}
+        cameraOff={true}
+        onConfirm={noop}
+        onCancel={noop}
+      />,
+    );
+    expect(html).toContain("Take a quick selfie to save Time in");
+    expect(html).toContain("Wall QR OK");
+    expect(html).toContain("Take selfie &amp; save Time in");
   });
 });

@@ -6,6 +6,8 @@
  * rotation & printable token issuance.
  */
 
+import { cache } from "react";
+
 import { policyRulesToAttendancePolicy, validatePolicy, type PolicyRules } from "@/lib/ui/policy";
 import { prisma } from "@/lib/db";
 import { AppError } from "@/lib/http/errors";
@@ -192,13 +194,13 @@ function mapCheckpoint(
   };
 }
 
-export async function getPrimaryOffice() {
+export const getPrimaryOffice = cache(async () => {
   const office = await prisma.office.findFirst({ orderBy: { createdAt: "asc" } });
   if (!office) {
     throw new AppError(503, "OFFICE_NOT_CONFIGURED", "No office record has been seeded yet.", false);
   }
   return office;
-}
+});
 
 export async function getOfficeSetup(): Promise<OfficeSetupVM & { readonly officeId: string }> {
   const office = await getPrimaryOffice();

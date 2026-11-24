@@ -191,18 +191,64 @@ function SessionPanel({ detail, data, mock }: { detail: SessionDetailVM; data: A
           </span>
         </p>
         {detail.scans.length ? (
-          <ul className="mt-2 flex flex-col gap-2">
+          <ul className="mt-2 flex flex-col gap-3">
             {detail.scans.map((scan) => (
-              <li key={`${scan.dateIso ?? ""}${scan.time}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[13px] leading-[18px]">
-                <span className="font-mono">
-                  {scan.dateIso ? `${formatShortDate(scan.dateIso)} · ` : ""}
-                  {scan.time}
-                </span>
-                <span className="min-w-0 flex-1">
-                  {scan.qrLabel} <span className="text-xs text-muted-foreground">· {scan.distanceM} m</span>
-                </span>
-                <StatusMark kind={{ type: "scan", value: scan.accepted ? "ACCEPTED" : "REJECTED" }} audience="hr" />
-                {scan.rejectReason ? <span className="basis-full text-xs text-muted-foreground">Rejected: {scan.rejectReason}</span> : null}
+              <li
+                key={`${scan.dateIso ?? ""}${scan.time}`}
+                className="flex flex-col gap-1.5 rounded-btn border border-hairline bg-background/50 p-2.5 text-[13px] leading-[18px]"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
+                  <span className="font-mono">
+                    {scan.dateIso ? `${formatShortDate(scan.dateIso)} · ` : ""}
+                    {scan.time}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    {scan.qrLabel} <span className="text-xs text-muted-foreground">· {scan.distanceM} m</span>
+                  </span>
+                  <StatusMark kind={{ type: "scan", value: scan.accepted ? "ACCEPTED" : "REJECTED" }} audience="hr" />
+                </div>
+                {scan.rejectReason ? (
+                  <span className="text-xs text-muted-foreground">Rejected: {scan.rejectReason}</span>
+                ) : null}
+                {scan.photoDataUrl || scan.wallPosterDataUrl ? (
+                  <div className="mt-1 flex items-center gap-2">
+                    {scan.photoDataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={scan.photoDataUrl}
+                        alt={`${detail.internName} verification selfie at ${scan.time}`}
+                        title={scan.photoSha256 ? `SHA-256: ${scan.photoSha256.slice(0, 16)}…` : undefined}
+                        className="h-14 w-20 rounded border border-border object-cover"
+                      />
+                    ) : null}
+                    {scan.wallPosterDataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={scan.wallPosterDataUrl}
+                        alt={`Wall QR poster frame at ${scan.time}`}
+                        className="h-14 w-20 rounded border border-border object-cover"
+                      />
+                    ) : null}
+                    <div className="min-w-0 text-[11px] leading-4 text-muted-foreground">
+                      <p className="font-medium text-settled">In-app photo verified</p>
+                      {scan.photoSha256 ? (
+                        <p className="truncate font-mono">sha256:{scan.photoSha256.slice(0, 12)}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {scan.securityWarnings?.length ? (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {scan.securityWarnings.map((warning) => (
+                      <span
+                        key={warning}
+                        className="rounded-chip border border-attn/35 bg-attn-bg px-2 py-0.5 text-[11px] font-medium text-attn"
+                      >
+                        {warning}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

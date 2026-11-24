@@ -88,6 +88,19 @@ export function failureCopy(failure: FailureDetail, attempted: ScanAction): Fail
         primary: SCAN_AGAIN,
         secondary: CORRECTION,
       };
+    case "photo-invalid":
+      return {
+        ...base,
+        headline: "Camera photo couldn't be verified",
+        body: "Keep the camera lens uncovered in a well-lit area at the office entrance and take a live selfie.",
+        tips: [
+          "Do not cover the front or rear camera lens.",
+          "Stand in a lit area near the office checkpoint poster.",
+          "Scan the code again inside the TRCHR app.",
+        ],
+        primary: SCAN_AGAIN,
+        secondary: CORRECTION,
+      };
     case "invalid-qr":
       return {
         ...base,

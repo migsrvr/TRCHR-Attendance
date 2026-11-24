@@ -1223,7 +1223,26 @@ export async function getCorrectionForReview(id: string): Promise<ReviewDetailVM
         distanceMeters?: number;
         geofenceRadiusMeters?: number;
         accuracyMeters?: number;
+        selfieDataUrl?: string;
+        selfieSha256?: string;
+        wallPosterDataUrl?: string;
       } | null;
+      const flags = scan.validationFlags as {
+        sharedDeviceWarning?: boolean;
+        sharedWithInternName?: string;
+        gpsWarnings?: string[];
+      } | null;
+      const securityWarnings: string[] = [];
+      if (flags?.sharedDeviceWarning) {
+        securityWarnings.push(
+          flags.sharedWithInternName
+            ? `Shared device with ${flags.sharedWithInternName} (<12h)`
+            : "Shared device detected (<12h)",
+        );
+      }
+      if (flags?.gpsWarnings?.includes("ZERO_JITTER_COORDINATES")) {
+        securityWarnings.push("Zero-jitter identical GPS coordinates");
+      }
       return {
         action: scan.actionSnapshot === "TIME_IN" ? "Time in" : "Time out",
         time: formatClock(scan.receivedAtUtc, timeZone, { seconds: true }),
@@ -1232,6 +1251,10 @@ export async function getCorrectionForReview(id: string): Promise<ReviewDetailVM
         radiusM: Math.round(ev?.geofenceRadiusMeters ?? req.internship.office.geofenceRadiusMeters),
         accuracyM: Math.round(ev?.accuracyMeters ?? 0),
         accepted: scan.validationStatus === "ACCEPTED",
+        photoDataUrl: ev?.selfieDataUrl,
+        wallPosterDataUrl: ev?.wallPosterDataUrl,
+        photoSha256: ev?.selfieSha256,
+        securityWarnings: securityWarnings.length > 0 ? securityWarnings : undefined,
       };
     });
 

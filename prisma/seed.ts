@@ -206,7 +206,7 @@ async function main(): Promise<void> {
         departments: departmentNames,
       }),
     );
-  });
+  }, { timeout: 30_000, maxWait: 10_000 });
 }
 
 main()

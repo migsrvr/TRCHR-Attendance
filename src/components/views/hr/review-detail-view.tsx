@@ -122,24 +122,65 @@ function EvidenceCard({ data }: { data: ReviewDetailVM }) {
         </span>
       </div>
       {data.evidence.map((scan) => (
-        <div key={scan.time} className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-4 px-5 pb-4">
-          <GeofenceMark distanceM={scan.distanceM} radiusM={scan.radiusM} accuracyM={scan.accuracyM} accepted={scan.accepted} />
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px] leading-[18px]">
-            <dt className="text-muted-foreground">{scan.action}</dt>
-            <dd className="font-mono">{scan.time}</dd>
-            <dt className="text-muted-foreground">QR</dt>
-            <dd>{scan.qrLabel}</dd>
-            <dt className="text-muted-foreground">Distance</dt>
-            <dd className="font-mono">
-              {scan.distanceM} m of {scan.radiusM} m
-            </dd>
-            <dt className="text-muted-foreground">Accuracy</dt>
-            <dd className="font-mono">±{scan.accuracyM} m</dd>
-            <dt className="text-muted-foreground">Result</dt>
-            <dd>
-              <StatusMark kind={{ type: "scan", value: scan.accepted ? "ACCEPTED" : "REJECTED" }} audience="hr" />
-            </dd>
-          </dl>
+        <div key={scan.time} className="flex flex-col gap-3 px-5 pb-4">
+          <div className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-4">
+            <GeofenceMark distanceM={scan.distanceM} radiusM={scan.radiusM} accuracyM={scan.accuracyM} accepted={scan.accepted} />
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px] leading-[18px]">
+              <dt className="text-muted-foreground">{scan.action}</dt>
+              <dd className="font-mono">{scan.time}</dd>
+              <dt className="text-muted-foreground">QR</dt>
+              <dd>{scan.qrLabel}</dd>
+              <dt className="text-muted-foreground">Distance</dt>
+              <dd className="font-mono">
+                {scan.distanceM} m of {scan.radiusM} m
+              </dd>
+              <dt className="text-muted-foreground">Accuracy</dt>
+              <dd className="font-mono">±{scan.accuracyM} m</dd>
+              <dt className="text-muted-foreground">Result</dt>
+              <dd>
+                <StatusMark kind={{ type: "scan", value: scan.accepted ? "ACCEPTED" : "REJECTED" }} audience="hr" />
+              </dd>
+            </dl>
+          </div>
+          {scan.photoDataUrl || scan.wallPosterDataUrl ? (
+            <div className="flex items-center gap-2.5 rounded-btn border border-hairline bg-background/60 p-2.5">
+              {scan.photoDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={scan.photoDataUrl}
+                  alt={`Verification selfie at ${scan.time}`}
+                  title={scan.photoSha256 ? `SHA-256: ${scan.photoSha256.slice(0, 16)}…` : undefined}
+                  className="h-14 w-20 rounded border border-border object-cover"
+                />
+              ) : null}
+              {scan.wallPosterDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={scan.wallPosterDataUrl}
+                  alt={`Wall QR poster frame at ${scan.time}`}
+                  className="h-14 w-20 rounded border border-border object-cover"
+                />
+              ) : null}
+              <div className="min-w-0 text-xs leading-4 text-muted-foreground">
+                <p className="font-medium text-settled">In-app camera verified</p>
+                {scan.photoSha256 ? (
+                  <p className="truncate font-mono text-[11px]">sha256:{scan.photoSha256.slice(0, 12)}</p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          {scan.securityWarnings?.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {scan.securityWarnings.map((warning) => (
+                <span
+                  key={warning}
+                  className="rounded-chip border border-attn/35 bg-attn-bg px-2 py-0.5 text-[11px] font-medium text-attn"
+                >
+                  {warning}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       ))}
       {data.evidenceNote ? (

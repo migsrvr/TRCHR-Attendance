@@ -10,7 +10,14 @@
  * (an exception), because only the second can mean the scan was saved anyway.
  */
 
-import type { FailReason, FailureDetail, LocationFix, ScanIntent, ScanReceipt } from "@/lib/ui/scan-state";
+import type {
+  FailReason,
+  FailureDetail,
+  LocationFix,
+  ScanIntent,
+  ScanPhotoEvidence,
+  ScanReceipt,
+} from "@/lib/ui/scan-state";
 
 export type ScanResult<T> = { ok: true; value: T } | { ok: false; failure: FailureDetail };
 
@@ -18,6 +25,7 @@ export interface SubmitScanRequest {
   intentId: string;
   requestKey: string;
   location: LocationFix;
+  photoEvidence?: ScanPhotoEvidence;
 }
 
 export interface TodaySummary {
@@ -50,6 +58,11 @@ const CODE_TO_REASON: Record<string, FailReason> = {
   OUTSIDE_GEOFENCE: "outside",
   LOCATION_UNCERTAIN: "accuracy",
   ACCURACY_TOO_LOW: "accuracy",
+  LOCATION_PRE_INTENT: "accuracy",
+  LOCATION_SPOOF_SUSPECTED: "accuracy",
+  PHOTO_EVIDENCE_REQUIRED: "photo-invalid",
+  PHOTO_TAMPERED: "photo-invalid",
+  PHOTO_BLANK_FRAME: "photo-invalid",
   ALREADY_TIMED_IN: "already-in",
   NO_OPEN_SESSION: "not-in",
   UNAUTHENTICATED: "session-expired",

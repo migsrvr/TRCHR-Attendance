@@ -47,6 +47,13 @@ import {
   policyToUiRules,
   validateLocationFreshness,
 } from "@/modules/attendance/credit";
+import {
+  detectSharedDeviceBuddyPunch,
+  evaluateGpsIntegrity,
+  hashDeviceId,
+  verifyScanPhotoEvidence,
+  type ScanPhotoEvidence,
+} from "@/modules/attendance/security";
 import { recordAuditEvent } from "@/modules/audit";
 
 export interface CreateScanIntentInput {
@@ -70,6 +77,9 @@ export interface SubmitScanInput {
     readonly accuracyMeters: number;
     readonly capturedAtUtc: Date;
   };
+  readonly photoEvidence?: ScanPhotoEvidence;
+  readonly deviceId?: string;
+  readonly clientIp?: string;
   readonly correlationId: string;
 }
 
@@ -412,7 +422,7 @@ export async function submitScan(input: SubmitScanInput): Promise<SubmitScanHttp
           );
         }
 
-        // Location freshness + geodesic rule
+        // Location freshness + geodesic + anti-spoofing + photo verification
         const freshness = validateLocationFreshness(input.location.capturedAtUtc, serverNow);
         const office = internship.office;
         const distanceMeters = Math.round(
@@ -422,8 +432,9 @@ export async function submitScan(input: SubmitScanInput): Promise<SubmitScanHttp
           ),
         );
         const roundedAccuracy = Math.round(input.location.accuracyMeters);
+        const deviceIdHash = input.deviceId ? hashDeviceId(input.deviceId) : undefined;
 
-        const locationEvidence = {
+        const locationEvidence: Prisma.InputJsonObject = {
           latitude: input.location.latitude,
           longitude: input.location.longitude,
           accuracyMeters: input.location.accuracyMeters,
@@ -432,7 +443,104 @@ export async function submitScan(input: SubmitScanInput): Promise<SubmitScanHttp
           officeConfigVersion: office.configVersion,
           geofenceRadiusMeters: office.geofenceRadiusMeters,
           maxAccuracyMeters: office.maxAccuracyMeters,
+          ...(input.photoEvidence
+            ? {
+                selfieDataUrl: input.photoEvidence.selfie.dataUrl,
+                selfieSha256: input.photoEvidence.selfie.sha256,
+                selfieCapturedAtUtc: input.photoEvidence.selfie.capturedAtUtc,
+                ...(input.photoEvidence.wallPoster
+                  ? {
+                      wallPosterDataUrl: input.photoEvidence.wallPoster.dataUrl,
+                      wallPosterSha256: input.photoEvidence.wallPoster.sha256,
+                    }
+                  : {}),
+              }
+            : {}),
+          ...(deviceIdHash ? { deviceIdHash } : {}),
+          ...(input.clientIp ? { clientIp: input.clientIp } : {}),
         };
+
+        // 1. Photo evidence verification (required in production or whenever photoEvidence is supplied)
+        const photoCheck = verifyScanPhotoEvidence(input.photoEvidence, {
+          requirePhoto: Boolean(input.photoEvidence) || process.env.NODE_ENV === "production",
+        });
+        if (!photoCheck.ok) {
+          await tx.attendanceScan.create({
+            data: {
+              internshipId: internship.id,
+              checkpointId: checkpoint.id,
+              sessionId: null,
+              receivedAtUtc: serverNow,
+              locationEvidence,
+              validationStatus: "REJECTED",
+              validationFlags: { code: photoCheck.code },
+              receiptId: receipt.id,
+              actionSnapshot: intent.actionSnapshot,
+            },
+          });
+          return finalize(
+            422,
+            photoCheck.code,
+            makeTerminalErrorBody(photoCheck.code, photoCheck.message, input.correlationId),
+            intent.id,
+          );
+        }
+
+        // 2. GPS temporal & anti-spoofing integrity check
+        const previousScan = await tx.attendanceScan.findFirst({
+          where: { internshipId: internship.id },
+          orderBy: { receivedAtUtc: "desc" },
+          select: { locationEvidence: true },
+        });
+        const prevEv = previousScan?.locationEvidence as {
+          latitude?: number;
+          longitude?: number;
+          accuracyMeters?: number;
+        } | null;
+        const gpsIntegrity = evaluateGpsIntegrity({
+          latitude: input.location.latitude,
+          longitude: input.location.longitude,
+          accuracyMeters: input.location.accuracyMeters,
+          capturedAtUtc: input.location.capturedAtUtc,
+          intentIssuedAtUtc: intent.issuedAtUtc,
+          previousScanLocation:
+            typeof prevEv?.latitude === "number" &&
+            typeof prevEv?.longitude === "number" &&
+            typeof prevEv?.accuracyMeters === "number"
+              ? {
+                  latitude: prevEv.latitude,
+                  longitude: prevEv.longitude,
+                  accuracyMeters: prevEv.accuracyMeters,
+                }
+              : null,
+        });
+
+        if (!gpsIntegrity.ok) {
+          await tx.attendanceScan.create({
+            data: {
+              internshipId: internship.id,
+              checkpointId: checkpoint.id,
+              sessionId: null,
+              receivedAtUtc: serverNow,
+              locationEvidence,
+              validationStatus: "REJECTED",
+              validationFlags: { code: gpsIntegrity.code },
+              receiptId: receipt.id,
+              actionSnapshot: intent.actionSnapshot,
+            },
+          });
+          return finalize(
+            422,
+            gpsIntegrity.code,
+            makeTerminalErrorBody(gpsIntegrity.code, gpsIntegrity.message, input.correlationId, {
+              distanceMeters,
+              radiusMeters: office.geofenceRadiusMeters,
+              accuracyMeters: roundedAccuracy,
+              maxAccuracyMeters: office.maxAccuracyMeters,
+            }),
+            intent.id,
+          );
+        }
 
         if (!freshness.ok) {
           await tx.attendanceScan.create({
@@ -578,6 +686,56 @@ export async function submitScan(input: SubmitScanInput): Promise<SubmitScanHttp
           sessionVersion = updatedSession.version;
         }
 
+        // 3. Shared-device buddy-punching detection across interns within the last 12 hours
+        let sharedDeviceWarning = false;
+        let sharedWithInternName: string | undefined;
+        if (deviceIdHash) {
+          const recentOtherScans = await tx.attendanceScan.findMany({
+            where: {
+              receivedAtUtc: { gte: new Date(serverNow.getTime() - 12 * 60 * 60 * 1000) },
+              internship: { internUserId: { not: input.actorId } },
+            },
+            include: {
+              internship: {
+                include: { intern: { select: { id: true, name: true } } },
+              },
+            },
+            orderBy: { receivedAtUtc: "desc" },
+            take: 40,
+          });
+          const buddyPunch = detectSharedDeviceBuddyPunch({
+            currentInternUserId: input.actorId,
+            deviceIdHash,
+            nowUtc: serverNow,
+            recentDeviceScans: recentOtherScans
+              .filter((s) => {
+                const ev = s.locationEvidence as { deviceIdHash?: string } | null;
+                return ev?.deviceIdHash === deviceIdHash;
+              })
+              .map((s) => ({
+                internUserId: s.internship.intern.id,
+                internName: s.internship.intern.name,
+                receivedAtUtc: s.receivedAtUtc,
+              })),
+          });
+          if (buddyPunch.flagged) {
+            sharedDeviceWarning = true;
+            sharedWithInternName = buddyPunch.sharedWithInternName;
+          }
+        }
+
+        const validationFlags: Prisma.InputJsonObject = {
+          ...(crossMidnight ? { crossMidnight: true } : {}),
+          ...(input.photoEvidence ? { photoVerified: true } : {}),
+          ...(gpsIntegrity.warnings.length > 0 ? { gpsWarnings: gpsIntegrity.warnings } : {}),
+          ...(sharedDeviceWarning
+            ? {
+                sharedDeviceWarning: true,
+                ...(sharedWithInternName ? { sharedWithInternName } : {}),
+              }
+            : {}),
+        };
+
         await tx.attendanceScan.create({
           data: {
             internshipId: internship.id,
@@ -586,7 +744,7 @@ export async function submitScan(input: SubmitScanInput): Promise<SubmitScanHttp
             receivedAtUtc: serverNow,
             locationEvidence,
             validationStatus: "ACCEPTED",
-            validationFlags: crossMidnight ? { crossMidnight: true } : {},
+            validationFlags,
             receiptId: receipt.id,
             actionSnapshot: intent.actionSnapshot,
           },
@@ -1288,7 +1446,28 @@ export async function listSessionsByDay(filters: {
       if (filters.session === rowId || daySessions.some((s) => s.id === filters.session)) {
         const closed = row.sessions.filter((s) => s.end);
         const scansVm: SessionScanVM[] = allScans.map((scan) => {
-          const ev = scan.locationEvidence as { distanceMeters?: number } | null;
+          const ev = scan.locationEvidence as {
+            distanceMeters?: number;
+            selfieDataUrl?: string;
+            selfieSha256?: string;
+            wallPosterDataUrl?: string;
+          } | null;
+          const flags = scan.validationFlags as {
+            sharedDeviceWarning?: boolean;
+            sharedWithInternName?: string;
+            gpsWarnings?: string[];
+          } | null;
+          const securityWarnings: string[] = [];
+          if (flags?.sharedDeviceWarning) {
+            securityWarnings.push(
+              flags.sharedWithInternName
+                ? `Shared device with ${flags.sharedWithInternName} (<12h)`
+                : "Shared device detected (<12h)",
+            );
+          }
+          if (flags?.gpsWarnings?.includes("ZERO_JITTER_COORDINATES")) {
+            securityWarnings.push("Zero-jitter identical GPS coordinates");
+          }
           const scanDateIso = officeDateIso(scan.receivedAtUtc, timeZone);
           return {
             action: scan.actionSnapshot === "TIME_IN" ? "IN" : "OUT",
@@ -1298,6 +1477,10 @@ export async function listSessionsByDay(filters: {
             distanceM: Math.round(ev?.distanceMeters ?? 0),
             accepted: scan.validationStatus === "ACCEPTED",
             rejectReason: scan.validationStatus !== "ACCEPTED" ? scan.validationStatus : undefined,
+            photoDataUrl: ev?.selfieDataUrl,
+            wallPosterDataUrl: ev?.wallPosterDataUrl,
+            photoSha256: ev?.selfieSha256,
+            securityWarnings: securityWarnings.length > 0 ? securityWarnings : undefined,
           };
         });
 
