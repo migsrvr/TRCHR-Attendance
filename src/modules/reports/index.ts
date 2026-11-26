@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { getCachedDepartments, getCachedOfficeMetadata } from "@/lib/db/cache";
 import { AppError } from "@/lib/http/errors";
 import { hrReasonLabel } from "@/lib/ui/correction-form";
 import { toCsv as toRfc4180Csv } from "@/lib/ui/csv";
@@ -154,19 +155,17 @@ export async function buildDtrPage(
 
   const page = await prisma.$transaction(
     async (tx): Promise<DtrPageVM> => {
-      const [office, departments, internships] = await Promise.all([
-        tx.office.findFirst({
-          include: { policyVersions: { where: { status: "PUBLISHED" }, orderBy: { version: "desc" }, take: 1 } },
-          orderBy: { createdAt: "asc" },
-        }),
-        tx.department.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      // Phase 1 (Lightweight Subject Picker): fetch only intern names & departments,
+      // NOT every intern's lifetime sessions and correction requests.
+      const [office, departments, subjectRows] = await Promise.all([
+        getCachedOfficeMetadata(),
+        getCachedDepartments(),
         tx.internship.findMany({
           where: { intern: { status: { not: "PENDING" } } },
-          include: {
+          select: {
+            id: true,
             intern: { select: { id: true, name: true } },
             department: { select: { name: true } },
-            sessions: { include: { policyVersion: true }, orderBy: [{ attendanceDate: "asc" }, { effectiveTimeInUtc: "asc" }] },
-            correctionRequests: { where: { status: { not: "SUPERSEDED" } }, orderBy: { submittedAtUtc: "desc" } },
           },
           orderBy: { intern: { name: "asc" } },
         }),
@@ -176,15 +175,15 @@ export async function buildDtrPage(
       const now = new Date();
       const todayIso = officeDateIso(now, timeZone);
       const nowClock = formatClock(now, timeZone);
-      const policyLabel = office?.policyVersions[0] ? `Policy v${office.policyVersions[0].version}` : "No active policy";
+      const policyLabel = office?.latestPolicyVersion ? `Policy v${office.latestPolicyVersion}` : "No active policy";
       const deptNames = departments.map((d) => d.name);
 
-      const defaultInternId = internships[0]?.intern.id ?? "";
+      const defaultInternId = subjectRows[0]?.intern.id ?? "";
       const parsed = parseDtrScope(normalizedParams, { todayIso, defaultInternId });
       const subject = parsed.scope.subject;
       const known =
         subject.kind === "intern"
-          ? internships.some((i) => i.intern.id === subject.id)
+          ? subjectRows.some((i) => i.intern.id === subject.id)
           : deptNames.includes(subject.name);
 
       const scope =
@@ -195,6 +194,24 @@ export async function buildDtrPage(
       const range = parsed.error ? defaultPeriod(todayIso) : { from: scope.from, to: scope.to };
       const workdays = workdaysBetween(range.from, range.to);
       const subtitleTail = `${policyLabel} · ${timeZone} · generated ${todayIso} ${nowClock}`;
+
+      // Phase 2 (Scoped Hydration): fetch sessions & corrections ONLY for the selected intern or department.
+      const internships =
+        subjectRows.length === 0
+          ? []
+          : await tx.internship.findMany({
+              where:
+                scope.subject.kind === "intern"
+                  ? { internUserId: scope.subject.id }
+                  : { intern: { status: { not: "PENDING" } }, department: { name: scope.subject.name } },
+              include: {
+                intern: { select: { id: true, name: true } },
+                department: { select: { name: true } },
+                sessions: { include: { policyVersion: true }, orderBy: [{ attendanceDate: "asc" }, { effectiveTimeInUtc: "asc" }] },
+                correctionRequests: { where: { status: { not: "SUPERSEDED" } }, orderBy: { submittedAtUtc: "desc" } },
+              },
+              orderBy: { intern: { name: "asc" } },
+            });
 
       const buildInternDays = (internship: (typeof internships)[number]): { days: DtrDayVM[]; remainingMinutes: number } => {
         const credits = aggregateDayCredits(
@@ -359,7 +376,7 @@ export async function buildDtrPage(
         scope,
         rangeError: parsed.error,
         subjects: [
-          ...internships.map((i) => ({ value: i.intern.id, label: `${i.intern.name} · ${i.department.name}` })),
+          ...subjectRows.map((i) => ({ value: i.intern.id, label: `${i.intern.name} · ${i.department.name}` })),
           ...deptNames.map((name) => ({ value: `department:${name}`, label: `All interns in ${name}` })),
         ],
         title,

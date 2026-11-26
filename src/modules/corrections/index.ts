@@ -1251,8 +1251,8 @@ export async function getCorrectionForReview(id: string): Promise<ReviewDetailVM
         radiusM: Math.round(ev?.geofenceRadiusMeters ?? req.internship.office.geofenceRadiusMeters),
         accuracyM: Math.round(ev?.accuracyMeters ?? 0),
         accepted: scan.validationStatus === "ACCEPTED",
-        photoDataUrl: ev?.selfieDataUrl,
-        wallPosterDataUrl: ev?.wallPosterDataUrl,
+        photoDataUrl: ev?.selfieDataUrl ? `/api/v1/hr/scans/${scan.id}/photo?kind=selfie` : undefined,
+        wallPosterDataUrl: ev?.wallPosterDataUrl ? `/api/v1/hr/scans/${scan.id}/photo?kind=wall` : undefined,
         photoSha256: ev?.selfieSha256,
         securityWarnings: securityWarnings.length > 0 ? securityWarnings : undefined,
       };

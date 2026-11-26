@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { HrShell } from "@/components/shell/hr-shell";
+import { PageContentSkeleton } from "@/components/ui/section-skeleton";
 import { ReportsView } from "@/components/views/hr/reports-view";
 import { getDtrReport, getHrShell } from "@/lib/ui/queries/hr";
 
@@ -10,16 +12,22 @@ export const metadata: Metadata = {
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
+async function ReportsContent({ params }: { params: Record<string, string | undefined> }) {
+  const data = await getDtrReport(params);
+  return <ReportsView data={data} />;
+}
+
 export default async function HrReportsPage({ searchParams }: { searchParams: SearchParams }) {
-  const params = await searchParams;
+  const [params, shell] = await Promise.all([searchParams, getHrShell()]);
   const single = Object.fromEntries(
     Object.entries(params).map(([key, value]) => [key, typeof value === "string" ? value : undefined]),
   );
-  const [shell, data] = await Promise.all([getHrShell(), getDtrReport(single)]);
 
   return (
     <HrShell shell={shell} active="reports" title="DTR reports">
-      <ReportsView data={data} />
+      <Suspense fallback={<PageContentSkeleton rows={7} />}>
+        <ReportsContent params={single} />
+      </Suspense>
     </HrShell>
   );
 }

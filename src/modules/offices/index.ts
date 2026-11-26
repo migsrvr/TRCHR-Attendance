@@ -10,6 +10,7 @@ import { cache } from "react";
 
 import { policyRulesToAttendancePolicy, validatePolicy, type PolicyRules } from "@/lib/ui/policy";
 import { prisma } from "@/lib/db";
+import { invalidateOfficeCache } from "@/lib/db/cache";
 import { AppError } from "@/lib/http/errors";
 import { loadQrKeyringConfig, signQrCredential } from "@/lib/qr/signer";
 import { officeDateIso } from "@/lib/ui/format";
@@ -363,6 +364,7 @@ export async function updateOfficeSettings(
       correlationId: input.correlationId,
     });
 
+    invalidateOfficeCache();
     return { officeId: updated.id, settingsVersion: updated.configVersion };
   });
 }
@@ -575,6 +577,7 @@ export async function publishPolicyVersion(
       correlationId: input.correlationId,
     });
 
+    invalidateOfficeCache();
     return { policyVersionId: published.id, version: published.version };
   });
 }

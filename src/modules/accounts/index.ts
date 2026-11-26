@@ -14,6 +14,7 @@ import { hashPassword } from "better-auth/crypto";
 
 import type { AuthenticatedActor } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
+import { getCachedDepartments, getCachedOfficeMetadata, invalidateDepartmentsCache } from "@/lib/db/cache";
 import { AppError } from "@/lib/http/errors";
 import { sendSetupLinkEmail } from "@/lib/mail";
 import type { CorrectionReason } from "@/lib/ui/correction-form";
@@ -669,19 +670,26 @@ export async function listInterns(filters: {
   readonly department?: string | null;
   readonly page?: number;
 }): Promise<InternListVM> {
+  // Phase 1 (Filter-First, Zero Sessions): fetch lightweight intern profiles only.
   const [office, departments, users] = await Promise.all([
-    prisma.office.findFirst({ orderBy: { createdAt: "asc" } }),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
+    getCachedOfficeMetadata(),
+    getCachedDepartments(),
     prisma.user.findMany({
       where: { role: "INTERN" },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+        setupLinkSentAtUtc: true,
         internships: {
-          include: {
+          select: {
+            id: true,
+            status: true,
+            requiredMinutes: true,
+            startDate: true,
+            endDate: true,
             department: { select: { name: true } },
-            sessions: {
-              where: { status: "COMPLETE" },
-              include: { policyVersion: true },
-            },
           },
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -694,21 +702,11 @@ export async function listInterns(filters: {
   const activeDepartmentNames = departments.filter((d) => d.active).map((d) => d.name);
   const allDepartmentNames = departments.map((d) => d.name);
 
-  const allRows: InternListRowVM[] = users.flatMap((user) => {
+  type CandidateRow = Omit<InternListRowVM, "creditedMinutes"> & { readonly internshipId: string };
+
+  const allCandidates: CandidateRow[] = users.flatMap((user) => {
     const internship = user.internships[0];
     if (!internship) return [];
-
-    const credits = aggregateDayCredits(
-      internship.sessions.map((s) => ({
-        attendanceDateIso: dateToIso(s.attendanceDate),
-        status: s.status,
-        effectiveTimeInUtc: s.effectiveTimeInUtc,
-        effectiveTimeOutUtc: s.effectiveTimeOutUtc,
-        timezoneSnapshot: s.timezoneSnapshot,
-        policyVersion: s.policyVersion,
-      })),
-      internship.requiredMinutes,
-    );
 
     let tab: Exclude<InternAccountTab, "all">;
     let status: StatusKind;
@@ -728,11 +726,11 @@ export async function listInterns(filters: {
 
     return [
       {
+        internshipId: internship.id,
         id: user.id,
         name: user.name,
         email: user.email,
         department: internship.department.name,
-        creditedMinutes: credits.totalCreditedMinutes,
         requiredMinutes: internship.requiredMinutes,
         startDateIso: dateToIso(internship.startDate),
         endDateIso: internship.endDate ? dateToIso(internship.endDate) : null,
@@ -747,11 +745,11 @@ export async function listInterns(filters: {
   });
 
   const counts: Record<InternAccountTab, number> = {
-    all: allRows.length,
-    active: allRows.filter((r) => r.tab === "active").length,
-    pending: allRows.filter((r) => r.tab === "pending").length,
-    finished: allRows.filter((r) => r.tab === "finished").length,
-    disabled: allRows.filter((r) => r.tab === "disabled").length,
+    all: allCandidates.length,
+    active: allCandidates.filter((r) => r.tab === "active").length,
+    pending: allCandidates.filter((r) => r.tab === "pending").length,
+    finished: allCandidates.filter((r) => r.tab === "finished").length,
+    disabled: allCandidates.filter((r) => r.tab === "disabled").length,
   };
 
   const validTabs: InternAccountTab[] = ["all", "active", "pending", "finished", "disabled"];
@@ -760,7 +758,7 @@ export async function listInterns(filters: {
   const department = filters.department && allDepartmentNames.includes(filters.department) ? filters.department : null;
   const needle = query.toLowerCase();
 
-  const filteredRows = allRows.filter(
+  const filteredRows = allCandidates.filter(
     (row) =>
       (tab === "all" || row.tab === tab) &&
       (!department || row.department === department) &&
@@ -768,7 +766,40 @@ export async function listInterns(filters: {
   );
 
   const page = Math.max(1, Math.floor(filters.page ?? 1));
-  const paged = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pagedCandidates = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Phase 2 (Hydrate-Only-Current-Page): fetch COMPLETE sessions ONLY for the <= 25 visible interns.
+  const pageInternshipIds = pagedCandidates.map((c) => c.internshipId);
+  const pageSessions =
+    pageInternshipIds.length > 0
+      ? await prisma.attendanceSession.findMany({
+          where: { internshipId: { in: pageInternshipIds }, status: "COMPLETE" },
+          include: { policyVersion: true },
+        })
+      : [];
+
+  const sessionsByInternship = new Map<string, typeof pageSessions>();
+  for (const s of pageSessions) {
+    const arr = sessionsByInternship.get(s.internshipId);
+    if (arr) arr.push(s);
+    else sessionsByInternship.set(s.internshipId, [s]);
+  }
+
+  const paged: InternListRowVM[] = pagedCandidates.map(({ internshipId, ...rest }) => {
+    const sessions = sessionsByInternship.get(internshipId) ?? [];
+    const credits = aggregateDayCredits(
+      sessions.map((s) => ({
+        attendanceDateIso: dateToIso(s.attendanceDate),
+        status: s.status,
+        effectiveTimeInUtc: s.effectiveTimeInUtc,
+        effectiveTimeOutUtc: s.effectiveTimeOutUtc,
+        timezoneSnapshot: s.timezoneSnapshot,
+        policyVersion: s.policyVersion,
+      })),
+      rest.requiredMinutes,
+    );
+    return { ...rest, creditedMinutes: credits.totalCreditedMinutes };
+  });
 
   return {
     tab,
@@ -787,45 +818,57 @@ export async function listInterns(filters: {
 }
 
 export async function getInternProfile(id: string): Promise<InternProfileVM | null> {
-  const user = await prisma.user.findFirst({
-    where: {
-      role: "INTERN",
-      OR: [{ id }, { internships: { some: { id } } }],
-    },
-    include: {
-      internships: {
-        include: {
-          department: true,
-          office: {
-            include: {
-              policyVersions: {
-                where: { status: "PUBLISHED" },
-                orderBy: { version: "desc" },
-                take: 1,
+  // Parallelize cached departments alongside the user profile query, and never pull
+  // locationEvidence photo blobs for rejected scan counts.
+  const [cachedDepts, user] = await Promise.all([
+    getCachedDepartments(),
+    prisma.user.findFirst({
+      where: {
+        role: "INTERN",
+        OR: [{ id }, { internships: { some: { id } } }],
+      },
+      include: {
+        internships: {
+          include: {
+            department: true,
+            office: {
+              include: {
+                policyVersions: {
+                  where: { status: "PUBLISHED" },
+                  orderBy: { version: "desc" },
+                  take: 1,
+                },
               },
             },
+            assignments: {
+              include: { department: { select: { name: true } } },
+              orderBy: { effectiveFromDate: "desc" },
+            },
+            sessions: {
+              include: { policyVersion: true, corrections: { orderBy: { submittedAtUtc: "desc" }, take: 1 } },
+              orderBy: [{ attendanceDate: "desc" }, { effectiveTimeInUtc: "asc" }],
+            },
+            scans: {
+              where: { validationStatus: { in: ["REJECTED", "UNCERTAIN"] } },
+              select: { receivedAtUtc: true, validationStatus: true },
+              orderBy: { receivedAtUtc: "desc" },
+              take: 1,
+            },
+            _count: {
+              select: {
+                scans: { where: { validationStatus: { in: ["REJECTED", "UNCERTAIN"] } } },
+              },
+            },
+            correctionRequests: {
+              orderBy: { submittedAtUtc: "desc" },
+            },
           },
-          assignments: {
-            include: { department: { select: { name: true } } },
-            orderBy: { effectiveFromDate: "desc" },
-          },
-          sessions: {
-            include: { policyVersion: true, corrections: { orderBy: { submittedAtUtc: "desc" }, take: 1 } },
-            orderBy: [{ attendanceDate: "desc" }, { effectiveTimeInUtc: "asc" }],
-          },
-          scans: {
-            where: { validationStatus: { in: ["REJECTED", "UNCERTAIN"] } },
-            orderBy: { receivedAtUtc: "desc" },
-          },
-          correctionRequests: {
-            orderBy: { submittedAtUtc: "desc" },
-          },
+          orderBy: { createdAt: "desc" },
+          take: 1,
         },
-        orderBy: { createdAt: "desc" },
-        take: 1,
       },
-    },
-  });
+    }),
+  ]);
 
   if (!user) return null;
   const internship = user.internships[0];
@@ -891,11 +934,7 @@ export async function getInternProfile(id: string): Promise<InternProfileVM | nu
   const openToday = todaySessions.find((s) => s.status === "OPEN");
   const completeToday = todaySessions.find((s) => s.status === "COMPLETE");
 
-  const activeDepartments = await prisma.department.findMany({
-    where: { active: true },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
+  const activeDepartments = cachedDepts.filter((d) => d.active).map((d) => ({ id: d.id, name: d.name }));
 
   const openCorrections = internship.correctionRequests.filter(
     (c) => c.status === "PENDING" || c.status === "NEEDS_INFO",
@@ -903,6 +942,7 @@ export async function getInternProfile(id: string): Promise<InternProfileVM | nu
   const approvedCount = internship.correctionRequests.filter((c) => c.status === "APPROVED").length;
   const rejectedCount = internship.correctionRequests.filter((c) => c.status === "REJECTED").length;
   const lastRejected = internship.scans[0];
+  const rejectedScanCount = internship._count.scans;
 
   const assignments =
     internship.assignments.length > 0
@@ -961,7 +1001,7 @@ export async function getInternProfile(id: string): Promise<InternProfileVM | nu
               rejected: rejectedCount,
               open: openCorrections.length,
             },
-            rejectedScans: internship.scans.length,
+            rejectedScans: rejectedScanCount,
             lastRejectedScan: lastRejected
               ? {
                   dateIso: officeDateIso(lastRejected.receivedAtUtc, timeZone),
@@ -1056,6 +1096,7 @@ export async function createDepartment(input: {
       afterValues: { name: created.name, active: true, summary: `Added department ${created.name}` },
       correlationId: input.correlationId,
     });
+    invalidateDepartmentsCache();
     return { id: created.id, name: created.name };
   });
 }
@@ -1098,6 +1139,7 @@ export async function renameDepartment(input: {
       afterValues: { name: updated.name, summary: `Renamed department "${current.name}" to "${updated.name}"` },
       correlationId: input.correlationId,
     });
+    invalidateDepartmentsCache();
     return { id: updated.id, name: updated.name };
   });
 }
@@ -1131,6 +1173,7 @@ export async function setDepartmentActive(input: {
       },
       correlationId: input.correlationId,
     });
+    invalidateDepartmentsCache();
     return { active: updated.active };
   });
 }

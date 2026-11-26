@@ -218,6 +218,8 @@ function SessionPanel({ detail, data, mock }: { detail: SessionDetailVM; data: A
                         src={scan.photoDataUrl}
                         alt={`${detail.internName} verification selfie at ${scan.time}`}
                         title={scan.photoSha256 ? `SHA-256: ${scan.photoSha256.slice(0, 16)}…` : undefined}
+                        loading="lazy"
+                        decoding="async"
                         className="h-14 w-20 rounded border border-border object-cover"
                       />
                     ) : null}
@@ -226,6 +228,8 @@ function SessionPanel({ detail, data, mock }: { detail: SessionDetailVM; data: A
                       <img
                         src={scan.wallPosterDataUrl}
                         alt={`Wall QR poster frame at ${scan.time}`}
+                        loading="lazy"
+                        decoding="async"
                         className="h-14 w-20 rounded border border-border object-cover"
                       />
                     ) : null}

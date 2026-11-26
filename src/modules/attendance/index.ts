@@ -13,6 +13,7 @@ import type { Prisma } from "@prisma/client";
 
 import type { ActiveInternActor } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
+import { getCachedDepartments, getCachedOfficeMetadata } from "@/lib/db/cache";
 import { evaluateLocation, haversineDistanceMeters, type LatLng } from "@/lib/geo/distance";
 import { AppError } from "@/lib/http/errors";
 import { canonicalPayloadHash, getDbErrorCode, withTransientDbRetry } from "@/lib/http/guard";
@@ -1141,7 +1142,7 @@ export async function getInternHistoryData(
 }
 
 export async function getHrTodayOverview(): Promise<HrOverviewVM> {
-  const office = await prisma.office.findFirst({ orderBy: { createdAt: "asc" } });
+  const office = await getCachedOfficeMetadata();
   const timeZone = office?.timezone ?? "Asia/Manila";
   const now = new Date();
   const todayIso = officeDateIso(now, timeZone);
@@ -1314,11 +1315,8 @@ export async function listSessionsByDay(filters: {
   readonly to?: string;
 }): Promise<AttendanceVM & { readonly timeZone: string; readonly from?: string; readonly to?: string }> {
   const [office, departments] = await Promise.all([
-    prisma.office.findFirst({
-      include: { policyVersions: { where: { status: "PUBLISHED" }, orderBy: { version: "desc" }, take: 1 } },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
+    getCachedOfficeMetadata(),
+    getCachedDepartments(),
   ]);
 
   const timeZone = office?.timezone ?? "Asia/Manila";
@@ -1340,6 +1338,8 @@ export async function listSessionsByDay(filters: {
 
   const departmentById = new Map(departments.map((d) => [d.id, d.name]));
 
+  // Phase 1 (Projection-Only List Query): count scans via _count without pulling
+  // megabytes of locationEvidence Base64 photo blobs or revisions for unselected rows.
   const sessions = await prisma.attendanceSession.findMany({
     where: {
       attendanceDate: {
@@ -1351,8 +1351,7 @@ export async function listSessionsByDay(filters: {
     include: {
       policyVersion: true,
       internship: { include: { intern: { select: { id: true, name: true } } } },
-      scans: { include: { checkpoint: true }, orderBy: { receivedAtUtc: "asc" } },
-      revisions: { include: { review: { include: { reviewer: { select: { name: true } } } } }, orderBy: { appliedAtUtc: "desc" } },
+      _count: { select: { scans: true } },
       corrections: { where: { status: { in: ["PENDING", "NEEDS_INFO"] } }, orderBy: { submittedAtUtc: "desc" }, take: 1 },
     },
     orderBy: [{ attendanceDate: "desc" }, { effectiveTimeInUtc: "asc" }],
@@ -1372,7 +1371,18 @@ export async function listSessionsByDay(filters: {
     else internMap.set(s.internshipId, [s]);
   }
 
-  let selected: SessionDetailVM | null = null;
+  let selectedTarget: {
+    rowId: string;
+    dateIso: string;
+    intern: { id: string; name: string };
+    deptName: string;
+    daySessions: typeof sessions;
+    row: AttendanceRowVM;
+    rowStatus: StatusKind;
+    hasReview: boolean;
+    openCorr: (typeof sessions)[number]["corrections"][number] | undefined;
+    creditedMinutes: number | null;
+  } | null = null;
   const days: AttendanceDayVM[] = [];
 
   for (const [dateIso, internMap] of Array.from(dayMap.entries()).sort((a, b) => b[0].localeCompare(a[0]))) {
@@ -1387,8 +1397,7 @@ export async function listSessionsByDay(filters: {
       const hasOpen = daySessions.some((s) => s.status === "OPEN");
       const hasReview = daySessions.some((s) => s.status === "REVIEW");
       const openCorr = daySessions.flatMap((s) => s.corrections)[0];
-      const allScans = daySessions.flatMap((s) => s.scans);
-      scanCount += allScans.length;
+      scanCount += daySessions.reduce((sum, s) => sum + s._count.scans, 0);
 
       const filterKey: Exclude<AttendanceStatusFilter, "all"> =
         hasReview || openCorr ? "review" : hasOpen ? "open" : "complete";
@@ -1443,83 +1452,18 @@ export async function listSessionsByDay(filters: {
         filter: filterKey,
       };
 
-      if (filters.session === rowId || daySessions.some((s) => s.id === filters.session)) {
-        const closed = row.sessions.filter((s) => s.end);
-        const scansVm: SessionScanVM[] = allScans.map((scan) => {
-          const ev = scan.locationEvidence as {
-            distanceMeters?: number;
-            selfieDataUrl?: string;
-            selfieSha256?: string;
-            wallPosterDataUrl?: string;
-          } | null;
-          const flags = scan.validationFlags as {
-            sharedDeviceWarning?: boolean;
-            sharedWithInternName?: string;
-            gpsWarnings?: string[];
-          } | null;
-          const securityWarnings: string[] = [];
-          if (flags?.sharedDeviceWarning) {
-            securityWarnings.push(
-              flags.sharedWithInternName
-                ? `Shared device with ${flags.sharedWithInternName} (<12h)`
-                : "Shared device detected (<12h)",
-            );
-          }
-          if (flags?.gpsWarnings?.includes("ZERO_JITTER_COORDINATES")) {
-            securityWarnings.push("Zero-jitter identical GPS coordinates");
-          }
-          const scanDateIso = officeDateIso(scan.receivedAtUtc, timeZone);
-          return {
-            action: scan.actionSnapshot === "TIME_IN" ? "IN" : "OUT",
-            time: formatClock(scan.receivedAtUtc, timeZone, { seconds: true }),
-            dateIso: scanDateIso !== dateIso ? scanDateIso : undefined,
-            qrLabel: formatCheckpointLabel(scan.checkpoint.name, scan.actionSnapshot),
-            distanceM: Math.round(ev?.distanceMeters ?? 0),
-            accepted: scan.validationStatus === "ACCEPTED",
-            rejectReason: scan.validationStatus !== "ACCEPTED" ? scan.validationStatus : undefined,
-            photoDataUrl: ev?.selfieDataUrl,
-            wallPosterDataUrl: ev?.wallPosterDataUrl,
-            photoSha256: ev?.selfieSha256,
-            securityWarnings: securityWarnings.length > 0 ? securityWarnings : undefined,
-          };
-        });
-
-        selected = {
-          id: rowId,
-          internId: intern.id,
-          internName: intern.name,
-          department: deptName,
+      if (filters.session && (filters.session === rowId || daySessions.some((s) => s.id === filters.session))) {
+        selectedTarget = {
+          rowId,
           dateIso,
-          version: first.version,
-          policyVersion: first.policyVersion.version,
-          status: rowStatus,
-          heldReason: hasReview
-            ? "Overnight or out-of-policy departure. Ask the intern to submit a correction so HR can review."
-            : undefined,
-          effective: daySessions.map((s) => {
-            const outDateIso = s.effectiveTimeOutUtc ? officeDateIso(s.effectiveTimeOutUtc, s.timezoneSnapshot) : undefined;
-            return {
-              timeIn: s.effectiveTimeInUtc ? formatClock(s.effectiveTimeInUtc, s.timezoneSnapshot) : null,
-              timeOut: s.effectiveTimeOutUtc ? formatClock(s.effectiveTimeOutUtc, s.timezoneSnapshot) : null,
-              timeOutDateIso: outDateIso && outDateIso !== dateIso ? outDateIso : undefined,
-            };
-          }),
-          elapsedMinutes:
-            closed.length && closed.length === row.sessions.length
-              ? closed.reduce((sum, s) => sum + clockToMinutes(s.end!) - clockToMinutes(s.start), 0)
-              : null,
+          intern,
+          deptName,
+          daySessions,
+          row,
+          rowStatus,
+          hasReview,
+          openCorr,
           creditedMinutes,
-          scans: scansVm,
-          revisions: daySessions.flatMap((s) =>
-            s.revisions.map((rev) => ({
-              label: `Approved by ${rev.review.reviewer.name}`,
-              atLabel: `${formatShortDate(officeDateIso(rev.appliedAtUtc, timeZone))} · ${formatClock(rev.appliedAtUtc, timeZone)}`,
-              before: JSON.stringify(rev.beforeValues),
-              after: JSON.stringify(rev.afterValues),
-            })),
-          ),
-          correction: openCorr ? { label: "Open the request", href: `/hr/reviews/${openCorr.id}` } : undefined,
-          canAskForCorrection: hasReview && !openCorr,
         };
       }
 
@@ -1542,8 +1486,105 @@ export async function listSessionsByDay(filters: {
     }
   }
 
-  const latestPolicy = office?.policyVersions[0];
-  const rules = latestPolicy ? policyToUiRules(latestPolicy) : null;
+  // Phase 2 (On-Demand Detail Query): hydrate scans & revisions ONLY for the selected session drawer.
+  let selected: SessionDetailVM | null = null;
+  if (selectedTarget) {
+    const targetSessionIds = selectedTarget.daySessions.map((s) => s.id);
+    const [detailScans, detailRevisions] = await Promise.all([
+      prisma.attendanceScan.findMany({
+        where: { sessionId: { in: targetSessionIds } },
+        include: { checkpoint: { select: { name: true } } },
+        orderBy: { receivedAtUtc: "asc" },
+      }),
+      prisma.attendanceRevision.findMany({
+        where: { sessionId: { in: targetSessionIds } },
+        include: { review: { include: { reviewer: { select: { name: true } } } } },
+        orderBy: { appliedAtUtc: "desc" },
+      }),
+    ]);
+
+    const { row, daySessions, dateIso, intern, deptName, rowId, rowStatus, hasReview, openCorr, creditedMinutes } =
+      selectedTarget;
+    const first = daySessions[0]!;
+    const closed = row.sessions.filter((s) => s.end);
+
+    const scansVm: SessionScanVM[] = detailScans.map((scan) => {
+      const ev = scan.locationEvidence as {
+        distanceMeters?: number;
+        selfieDataUrl?: string;
+        selfieSha256?: string;
+        wallPosterDataUrl?: string;
+      } | null;
+      const flags = scan.validationFlags as {
+        sharedDeviceWarning?: boolean;
+        sharedWithInternName?: string;
+        gpsWarnings?: string[];
+      } | null;
+      const securityWarnings: string[] = [];
+      if (flags?.sharedDeviceWarning) {
+        securityWarnings.push(
+          flags.sharedWithInternName
+            ? `Shared device with ${flags.sharedWithInternName} (<12h)`
+            : "Shared device detected (<12h)",
+        );
+      }
+      if (flags?.gpsWarnings?.includes("ZERO_JITTER_COORDINATES")) {
+        securityWarnings.push("Zero-jitter identical GPS coordinates");
+      }
+      const scanDateIso = officeDateIso(scan.receivedAtUtc, timeZone);
+      return {
+        action: scan.actionSnapshot === "TIME_IN" ? "IN" : "OUT",
+        time: formatClock(scan.receivedAtUtc, timeZone, { seconds: true }),
+        dateIso: scanDateIso !== dateIso ? scanDateIso : undefined,
+        qrLabel: formatCheckpointLabel(scan.checkpoint.name, scan.actionSnapshot),
+        distanceM: Math.round(ev?.distanceMeters ?? 0),
+        accepted: scan.validationStatus === "ACCEPTED",
+        rejectReason: scan.validationStatus !== "ACCEPTED" ? scan.validationStatus : undefined,
+        // Serve photos via lazy HR-authenticated binary endpoint instead of inlining Base64 in RSC HTML.
+        photoDataUrl: ev?.selfieDataUrl ? `/api/v1/hr/scans/${scan.id}/photo?kind=selfie` : undefined,
+        wallPosterDataUrl: ev?.wallPosterDataUrl ? `/api/v1/hr/scans/${scan.id}/photo?kind=wall` : undefined,
+        photoSha256: ev?.selfieSha256,
+        securityWarnings: securityWarnings.length > 0 ? securityWarnings : undefined,
+      };
+    });
+
+    selected = {
+      id: rowId,
+      internId: intern.id,
+      internName: intern.name,
+      department: deptName,
+      dateIso,
+      version: first.version,
+      policyVersion: first.policyVersion.version,
+      status: rowStatus,
+      heldReason: hasReview
+        ? "Overnight or out-of-policy departure. Ask the intern to submit a correction so HR can review."
+        : undefined,
+      effective: daySessions.map((s) => {
+        const outDateIso = s.effectiveTimeOutUtc ? officeDateIso(s.effectiveTimeOutUtc, s.timezoneSnapshot) : undefined;
+        return {
+          timeIn: s.effectiveTimeInUtc ? formatClock(s.effectiveTimeInUtc, s.timezoneSnapshot) : null,
+          timeOut: s.effectiveTimeOutUtc ? formatClock(s.effectiveTimeOutUtc, s.timezoneSnapshot) : null,
+          timeOutDateIso: outDateIso && outDateIso !== dateIso ? outDateIso : undefined,
+        };
+      }),
+      elapsedMinutes:
+        closed.length && closed.length === row.sessions.length
+          ? closed.reduce((sum, s) => sum + clockToMinutes(s.end!) - clockToMinutes(s.start), 0)
+          : null,
+      creditedMinutes,
+      scans: scansVm,
+      revisions: detailRevisions.map((rev) => ({
+        label: `Approved by ${rev.review.reviewer.name}`,
+        atLabel: `${formatShortDate(officeDateIso(rev.appliedAtUtc, timeZone))} · ${formatClock(rev.appliedAtUtc, timeZone)}`,
+        before: JSON.stringify(rev.beforeValues),
+        after: JSON.stringify(rev.afterValues),
+      })),
+      correction: openCorr ? { label: "Open the request", href: `/hr/reviews/${openCorr.id}` } : undefined,
+      canAskForCorrection: hasReview && !openCorr,
+    };
+  }
+
   // Touch constant to keep threshold aligned
   void REVIEW_THRESHOLD_WORKDAYS;
 
@@ -1554,7 +1595,7 @@ export async function listSessionsByDay(filters: {
     periodLabel: `${formatShortDate(fromIso)} – ${formatShortDate(toIso)}`,
     todayIso,
     nowClock,
-    schedule: rules ? { start: rules.start, end: rules.end } : { start: "08:00", end: "19:00" },
+    schedule: office?.latestPolicySchedule ?? { start: "08:00", end: "19:00" },
     departments: departmentNames,
     days,
     selected,

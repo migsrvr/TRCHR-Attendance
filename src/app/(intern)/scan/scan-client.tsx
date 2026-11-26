@@ -1,15 +1,11 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useReducer, useRef, useState } from "react";
 
 import { InternShell } from "@/components/shell/intern-shell";
-import { ScanBlockedView } from "@/components/views/intern/scan-blocked-view";
 import { ScanCheckingView } from "@/components/views/intern/scan-checking-view";
-import { ScanFailedView } from "@/components/views/intern/scan-failed-view";
 import { ScanReadyView } from "@/components/views/intern/scan-ready-view";
-import { ScanSavedView } from "@/components/views/intern/scan-saved-view";
-import { ScanSelfieView } from "@/components/views/intern/scan-selfie-view";
-import { ScanUnconfirmedView } from "@/components/views/intern/scan-unconfirmed-view";
 import { getFreshLocation, LocationError } from "@/lib/device/location";
 import { captureLiveVideoFrame, createSyntheticDevPhotoFrame } from "@/lib/device/photo-capture";
 import {
@@ -28,7 +24,23 @@ import type { ScanContext } from "@/lib/ui/queries/intern";
 import { blockedCopy, failureCopy } from "@/lib/ui/scan-copy";
 import { initialScanState, scanReducer, type PhotoCaptureFrame } from "@/lib/ui/scan-state";
 
-import { DevPanel } from "./dev-panel";
+// Tier 4 lazy loading: secondary scan states & dev panel load only when reached.
+const ScanBlockedView = dynamic(
+  () => import("@/components/views/intern/scan-blocked-view").then((m) => m.ScanBlockedView),
+);
+const ScanFailedView = dynamic(
+  () => import("@/components/views/intern/scan-failed-view").then((m) => m.ScanFailedView),
+);
+const ScanSavedView = dynamic(
+  () => import("@/components/views/intern/scan-saved-view").then((m) => m.ScanSavedView),
+);
+const ScanSelfieView = dynamic(
+  () => import("@/components/views/intern/scan-selfie-view").then((m) => m.ScanSelfieView),
+);
+const ScanUnconfirmedView = dynamic(
+  () => import("@/components/views/intern/scan-unconfirmed-view").then((m) => m.ScanUnconfirmedView),
+);
+const DevPanel = dynamic(() => import("./dev-panel").then((m) => m.DevPanel));
 
 /** A save that hasn't answered by now is treated as a lost response (Technical Design section 6). */
 const REQUEST_TIMEOUT_MS = 12_000;

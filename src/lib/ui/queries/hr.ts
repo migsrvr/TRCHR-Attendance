@@ -5,7 +5,7 @@
  */
 
 import { isMockModeEnabled, requirePageHr } from "@/lib/auth/session";
-import { prisma } from "@/lib/db";
+import { getCachedOfficeMetadata } from "@/lib/db/cache";
 import { hrReasonLabel } from "@/lib/ui/correction-form";
 import { datesBetween, defaultPeriod, dtrSearch, formatRange, isWeekend, parseDtrScope, workdaysBetween } from "@/lib/ui/dtr";
 import { ATTENDANCE_DAYS, ATTENDANCE_PERIOD_LABEL, canAskForCorrection, SESSION_EXTRAS } from "@/lib/ui/fixtures/attendance";
@@ -113,7 +113,7 @@ export async function getHrShell(): Promise<HrShellVM> {
   const actor = (await requirePageHr("/hr"))!;
   const [reviewCount, office] = await Promise.all([
     countWaitingOnHr(),
-    prisma.office.findFirst({ select: { name: true, timezone: true }, orderBy: { createdAt: "asc" } }),
+    getCachedOfficeMetadata(),
   ]);
   return {
     identity: {
