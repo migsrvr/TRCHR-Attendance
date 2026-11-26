@@ -41,6 +41,10 @@ export function assertSameOrigin(request: Request, configuredOrigin?: string): v
     configuredOrigin,
     process.env.APP_ORIGIN,
     process.env.BETTER_AUTH_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : undefined,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
     request.url,
   ]) {
     const parsed = originOf(candidate);

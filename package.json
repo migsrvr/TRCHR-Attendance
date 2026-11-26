@@ -15,6 +15,7 @@
     "test:e2e": "playwright test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "postinstall": "prisma generate",
     "worker": "tsx src/worker/index.ts"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "jose": "^5.9.0",
     "lucide-react": "^0.454.0",
     "next": "^15.0.0",
+    "nodemailer": "^10.6.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.5.4",
@@ -33,6 +35,7 @@
   "devDependencies": {
     "@playwright/test": "^1.65.1",
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.0",

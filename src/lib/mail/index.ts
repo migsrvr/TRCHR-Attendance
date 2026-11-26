@@ -1,13 +1,14 @@
 /**
- * Transactional email delivery backed by Python 3 stdlib SMTP (scripts/send_mail.py).
+ * Transactional email delivery backed by pure Node.js SMTP (nodemailer).
  *
- * No third-party email SDKs or SaaS providers required. When SMTP_HOST is unset
- * (local development), messages fall back to a structured console preview so
- * onboarding links remain testable without an external mail server.
+ * Works natively in Vercel Serverless Functions (no Python binary or external
+ * email SDK required). When SMTP_HOST is unset in local development/test,
+ * messages fall back to a structured console preview so onboarding links remain
+ * testable without an external mail server. In production, missing SMTP_HOST
+ * fails loudly so invite links are never silently dropped.
  */
 
-import { execFile } from "node:child_process";
-import path from "node:path";
+import nodemailer from "nodemailer";
 
 import { logInfo, logWarn } from "@/lib/http/logger";
 
@@ -31,44 +32,54 @@ export interface SendMailOptions {
   readonly transport?: MailTransport;
 }
 
-const SCRIPT_PATH = path.resolve(process.cwd(), "scripts", "send_mail.py");
+function buildSmtpConfig(env: Readonly<Record<string, string | undefined>>) {
+  const host = env.SMTP_HOST?.trim() ?? "";
+  const port = Number(env.SMTP_PORT?.trim() || "587");
+  const security = (env.SMTP_SECURITY?.trim() || "starttls").toLowerCase();
+  const user = env.SMTP_USER?.trim() || undefined;
+  const pass = env.SMTP_PASS?.trim() || undefined;
+  const from = env.SMTP_FROM?.trim() || "Top Realty Attendance <no-reply@toprealty.local>";
 
-function runPythonSmtp(
+  const secure = security === "ssl" || security === "smtps" || port === 465;
+  const requireTLS = security === "starttls" && !secure;
+
+  return {
+    from,
+    transportOptions: {
+      host,
+      port: Number.isFinite(port) && port > 0 ? port : 587,
+      secure,
+      requireTLS,
+      ...(user && pass ? { auth: { user, pass } } : {}),
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 12_000,
+    },
+  };
+}
+
+async function runNodeSmtp(
   message: MailMessage,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<SendMailResult> {
-  const pythonBin = env.PYTHON_BIN?.trim() || "python";
-
-  return new Promise((resolve, reject) => {
-    const child = execFile(
-      pythonBin,
-      [SCRIPT_PATH],
-      {
-        env: { ...process.env, ...env },
-        timeout: 12_000,
-        maxBuffer: 256 * 1024,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(`Python SMTP failed: ${stderr?.trim() || error.message}`));
-          return;
-        }
-        try {
-          const parsed = JSON.parse(stdout.trim()) as { delivered?: boolean; messageId?: string };
-          resolve({
-            delivered: parsed.delivered === true,
-            transport: "smtp",
-            messageId: parsed.messageId,
-          });
-        } catch {
-          resolve({ delivered: true, transport: "smtp" });
-        }
-      },
-    );
-
-    child.stdin?.write(JSON.stringify(message));
-    child.stdin?.end();
-  });
+  const { from, transportOptions } = buildSmtpConfig(env);
+  const transporter = nodemailer.createTransport(transportOptions);
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to: message.to,
+      subject: message.subject,
+      text: message.text,
+      ...(message.html ? { html: message.html } : {}),
+    });
+    return {
+      delivered: true,
+      transport: "smtp",
+      messageId: typeof info.messageId === "string" ? info.messageId : undefined,
+    };
+  } finally {
+    transporter.close();
+  }
 }
 
 export async function sendMail(
@@ -81,13 +92,17 @@ export async function sendMail(
 
   const env = options.env ?? process.env;
   const host = env.SMTP_HOST?.trim();
+  const nodeEnv = env.NODE_ENV ?? process.env.NODE_ENV;
 
   if (!host) {
+    if (nodeEnv === "production") {
+      throw new Error("SMTP_HOST is required in production to deliver transactional emails.");
+    }
     logInfo("mail.console_preview", {
       to: message.to,
       subject: message.subject,
     });
-    if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
+    if (nodeEnv !== "test") {
       // Development preview only — never logs links in production or test noise.
       console.info(`[mail:preview] To: ${message.to} | Subject: ${message.subject}\n${message.text}`);
     }
@@ -95,7 +110,7 @@ export async function sendMail(
   }
 
   try {
-    return await runPythonSmtp(message, env);
+    return await runNodeSmtp(message, env);
   } catch (error) {
     logWarn("mail.smtp_failed", {
       to: message.to,

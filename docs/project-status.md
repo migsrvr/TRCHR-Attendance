@@ -84,7 +84,7 @@ These items were intentionally kept out of the pre-QA scope and do not block sin
 
 ## 3. Pendings (Deployment Packaging, QA & Live-Environment Rollout)
 
-- [ ] **Deployment packaging fixes (before host deploy):** Add `"postinstall": "prisma generate"` in [package.json](../package.json), move `tsx` to `dependencies` (or compile worker/seed JS), load `.env` in `seed.ts` / `worker`, default `PYTHON_BIN` safely for Linux (`python3`), fail loudly if `SMTP_HOST` is unset in production, add HSTS in [next.config.mjs](../next.config.mjs), and add a deploy manifest / CI workflow.
+- [x] **Vercel deployment readiness & packaging:** Implemented in [package.json](../package.json) (`postinstall: "prisma generate"`), [schema.prisma](../prisma/schema.prisma) (`directUrl`), [src/lib/mail/index.ts](../src/lib/mail/index.ts) (pure Node.js `nodemailer` SMTP with production missing-SMTP guard), [src/app/api/v1/cron/worker/route.ts](../src/app/api/v1/cron/worker/route.ts) + [vercel.json](../vercel.json) (`cle1` region + `CRON_SECRET` worker cron), [next.config.mjs](../next.config.mjs) (production HSTS), and [src/lib/auth.ts](../src/lib/auth.ts) / [src/lib/http/guard.ts](../src/lib/http/guard.ts) (`VERCEL_URL` origin support). Full deploy guide in [docs/vercel-deployment.md](./vercel-deployment.md).
 - [ ] **Provision PostgreSQL 16+ & create `.env`:** Copy [.env.example](../.env.example) to `.env` and populate `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `APP_ORIGIN`, `QR_SIGNING_KEYS_JSON`, and `BOOTSTRAP_HR_*` / `BOOTSTRAP_OFFICE_*`.
 - [ ] **Apply migrations & seed live PostgreSQL:**
   ```powershell

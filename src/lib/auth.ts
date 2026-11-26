@@ -17,13 +17,25 @@ import { prisma } from "@/lib/db";
 
 const isProd = process.env.NODE_ENV === "production";
 
+const vercelOrigin = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined;
+const vercelProdOrigin = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : undefined;
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL ?? process.env.APP_ORIGIN ?? "http://localhost:3000",
+  baseURL:
+    process.env.BETTER_AUTH_URL ??
+    process.env.APP_ORIGIN ??
+    vercelProdOrigin ??
+    vercelOrigin ??
+    "http://localhost:3000",
   trustedOrigins: [
     process.env.APP_ORIGIN,
     process.env.BETTER_AUTH_URL,
+    vercelProdOrigin,
+    vercelOrigin,
   ].filter((origin): origin is string => Boolean(origin)),
   emailAndPassword: {
     enabled: true,

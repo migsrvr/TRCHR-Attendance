@@ -30,6 +30,9 @@ const nextConfig = {
             key: "Permissions-Policy",
             value: "camera=(self), geolocation=(self), microphone=(), payment=(), usb=()",
           },
+          ...(isProd
+            ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
+            : []),
         ],
       },
     ];

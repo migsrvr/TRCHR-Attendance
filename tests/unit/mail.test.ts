@@ -2,19 +2,32 @@ import { describe, expect, it } from "vitest";
 
 import { sendCorrectionRequestedEmail, sendMail, sendSetupLinkEmail } from "@/lib/mail";
 
-describe("mail delivery (Python SMTP + dev console fallback)", () => {
-  it("falls back to console transport when SMTP_HOST is unset", async () => {
+describe("mail delivery (Node SMTP + dev console fallback)", () => {
+  it("falls back to console transport when SMTP_HOST is unset in dev/test", async () => {
     const result = await sendMail(
       {
         to: "ana.reyes@school.edu.ph",
         subject: "Test message",
         text: "Hello Ana",
       },
-      { env: { SMTP_HOST: "" } },
+      { env: { SMTP_HOST: "", NODE_ENV: "test" } },
     );
 
     expect(result.delivered).toBe(true);
     expect(result.transport).toBe("console");
+  });
+
+  it("fails loudly in production when SMTP_HOST is unset", async () => {
+    await expect(
+      sendMail(
+        {
+          to: "ana.reyes@school.edu.ph",
+          subject: "Test message",
+          text: "Hello Ana",
+        },
+        { env: { SMTP_HOST: "", NODE_ENV: "production" } },
+      ),
+    ).rejects.toThrow("SMTP_HOST is required in production");
   });
 
   it("formats setup link emails without embedding any password", async () => {
